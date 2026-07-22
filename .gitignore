@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+*.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local storage (using R2 cloud storage)
+backend/storage/photos/
+!backend/storage/.gitignore
+
+# Test files
+backend/test_image.*
+backend/test_compressed_*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Build/Distribution
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node/Frontend
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# Alembic
+backend/alembic/versions/__pycache__/

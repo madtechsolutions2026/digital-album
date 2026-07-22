@@ -1,0 +1,3 @@
+# Ignore all files in storage directory (using R2 cloud storage)
+*
+!.gitignore
