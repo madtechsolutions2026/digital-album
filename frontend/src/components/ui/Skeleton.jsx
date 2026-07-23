@@ -20,10 +20,17 @@ export default function Skeleton({ className = '', variant = 'default' }) {
 }
 
 export function GallerySkeleton() {
+  // Varied heights so the loading state already hints at the masonry layout
+  const heights = ['aspect-[3/4]', 'aspect-square', 'aspect-[4/5]', 'aspect-[3/4]'];
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className="columns-2 md:columns-3 lg:columns-4 gap-5 space-y-5">
       {[...Array(8)].map((_, i) => (
-        <Skeleton key={i} variant="card" className="aspect-square" />
+        <div key={i} className="break-inside-avoid mb-5">
+          <div className={`relative overflow-hidden rounded-3xl bg-primary-100/50 ${heights[i % heights.length]}`}>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-shimmer" />
+          </div>
+        </div>
       ))}
     </div>
   );

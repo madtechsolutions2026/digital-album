@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, Image as ImageIcon, Sparkles, Trash2, X } from 'lucide-react';
+import { Plus, Calendar, Sparkles, Trash2, X, Copy, Check, PartyPopper, AlertTriangle } from 'lucide-react';
 
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
+import EventCard from '../components/ui/EventCard';
 import DropZone from '../components/upload/DropZone';
 import FilePreview from '../components/upload/FilePreview';
 import UploadStatusPanel from '../components/upload/UploadStatusPanel';
 import { eventsAPI, photosAPI, jobsAPI } from '../lib/api';
+import { resizeImageFile } from '../lib/imageResize';
 
 export default function AdminPage() {
   const [events, setEvents] = useState([]);
@@ -28,6 +29,9 @@ export default function AdminPage() {
   const [deleteConfirmEvent, setDeleteConfirmEvent] = useState(null);
   const [deletingEventId, setDeletingEventId] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+  const [revealCredentials, setRevealCredentials] = useState(null);
+  const [createError, setCreateError] = useState('');
+  const [copiedField, setCopiedField] = useState(null);
 
   useEffect(() => {
     fetchEvents();
@@ -48,21 +52,42 @@ export default function AdminPage() {
 
   const handleCreateEvent = async (e) => {
     e.preventDefault();
-    if (!newEventName) return;
+    if (!newEventName || !newEventDate) return;
+
+    setCreateError('');
 
     try {
       const response = await eventsAPI.create({
         name: newEventName,
-        event_date: newEventDate || null
+        event_date: newEventDate
       });
-      
+
+      const { event_id, name, access_code, password } = response.data.data;
+
       await fetchEvents();
-      setSelectedEventId(response.data.data.event_id);
+      setSelectedEventId(event_id);
       setNewEventName('');
       setNewEventDate('');
       setShowCreateEvent(false);
+
+      // Show the one-time credential reveal - the password can't be
+      // retrieved again after this.
+      setRevealCredentials({ name, access_code, password });
     } catch (error) {
       console.error('Failed to create event:', error);
+      setCreateError(
+        error.response?.data?.message || error.response?.data?.detail?.[0]?.msg || 'Failed to create event. Please try again.'
+      );
+    }
+  };
+
+  const handleCopy = async (text, field) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      // clipboard unavailable - nothing more we can do here
     }
   };
 
@@ -96,12 +121,17 @@ export default function AdminPage() {
           newStatus[file.name] = { uploading: true };
           setUploadStatus({ ...newStatus });
 
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('event_id', selectedEventId);
-          formData.append('skip_face_detection', 'true');
-
           try {
+            // Trim oversized originals client-side before upload - cuts
+            // network transfer time and server-side decode cost. Falls
+            // back to the original file if resizing fails for any reason.
+            const uploadFile = await resizeImageFile(file);
+
+            const formData = new FormData();
+            formData.append('file', uploadFile);
+            formData.append('event_id', selectedEventId);
+            formData.append('skip_face_detection', 'true');
+
             await photosAPI.upload(formData);
             newStatus[file.name] = { success: true };
             successCount++;
@@ -207,14 +237,17 @@ export default function AdminPage() {
       {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+          <p className="text-primary-600 font-semibold text-sm tracking-wide uppercase mb-1">
+            Studio
+          </p>
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-ink mb-2">
             Admin Studio
           </h2>
-          <p className="text-slate-600 dark:text-slate-400">
+          <p className="text-ink/60">
             Manage events, upload photos, and process faces
           </p>
         </div>
-        
+
         <Button
           onClick={() => setShowCreateEvent(!showCreateEvent)}
           variant="accent"
@@ -250,16 +283,21 @@ export default function AdminPage() {
                 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Event Date (Optional)
+                    Wedding Date
                   </label>
                   <input
                     type="date"
                     value={newEventDate}
                     onChange={(e) => setNewEventDate(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                    required
                   />
                 </div>
-                
+
+                {createError && (
+                  <p className="text-sm text-rose-600">{createError}</p>
+                )}
+
                 <div className="flex gap-3">
                   <Button type="submit" variant="primary">
                     Create Event
@@ -280,10 +318,10 @@ export default function AdminPage() {
 
       {/* Events Grid */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
+        <h3 className="font-display text-lg font-bold text-ink mb-4">
           Your Events
         </h3>
-        
+
         {events.length === 0 ? (
           <EmptyState
             icon={Calendar}
@@ -293,53 +331,18 @@ export default function AdminPage() {
             actionLabel="Create Event"
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
             {events.map((event) => (
-              <Card
+              <EventCard
                 key={event.event_id}
-                className={`p-6 cursor-pointer transition-all ${
-                  selectedEventId === event.event_id
-                    ? 'ring-2 ring-primary-500'
-                    : ''
-                }`}
+                event={event}
+                isSelected={selectedEventId === event.event_id}
                 onClick={() => setSelectedEventId(event.event_id)}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <h4 className="font-semibold text-slate-900 dark:text-slate-100">
-                    {event.name}
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    {selectedEventId === event.event_id && (
-                      <Badge variant="primary">Selected</Badge>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteError('');
-                        setDeleteConfirmEvent(event);
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
-                      aria-label={`Delete ${event.name}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                
-                {event.event_date && (
-                  <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-3">
-                    <Calendar className="w-4 h-4" />
-                    <span>{new Date(event.event_date).toLocaleDateString()}</span>
-                  </div>
-                )}
-                
-                <div className="flex items-center gap-4 text-sm">
-                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                    <ImageIcon className="w-4 h-4" />
-                    <span>{event.photo_count} photos</span>
-                  </div>
-                </div>
-              </Card>
+                onDelete={(evt) => {
+                  setDeleteError('');
+                  setDeleteConfirmEvent(evt);
+                }}
+              />
             ))}
           </div>
         )}
@@ -478,6 +481,91 @@ export default function AdminPage() {
                   className="flex-1"
                 >
                   {deletingEventId ? 'Deleting...' : 'Delete Permanently'}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* One-time credential reveal after creating an event */}
+      <AnimatePresence>
+        {revealCredentials && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="relative rounded-4xl bg-gradient-to-br from-primary-600 via-primary-500 to-gold-500 p-1 shadow-glow-primary max-w-sm w-full"
+            >
+              <div className="rounded-[calc(2rem-4px)] bg-white px-7 py-8">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-600 to-gold-500 flex items-center justify-center mx-auto mb-4 shadow-glow-primary">
+                  <PartyPopper className="w-7 h-7 text-white" />
+                </div>
+
+                <h3 className="font-display text-xl font-bold text-ink text-center mb-1">
+                  "{revealCredentials.name}" is live
+                </h3>
+                <p className="text-sm text-ink/60 text-center mb-6">
+                  Share these with the couple so they can unlock their gallery
+                </p>
+
+                <div className="space-y-3 mb-5">
+                  <div>
+                    <p className="text-xs font-semibold text-ink/40 uppercase tracking-wide mb-1.5">
+                      Event Code
+                    </p>
+                    <button
+                      onClick={() => handleCopy(revealCredentials.access_code, 'code')}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-primary-50 border border-primary-100 hover:bg-primary-100/60 transition-colors"
+                    >
+                      <span className="font-mono font-bold text-ink tracking-widest">
+                        {revealCredentials.access_code}
+                      </span>
+                      {copiedField === 'code' ? (
+                        <Check className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-ink/40" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-ink/40 uppercase tracking-wide mb-1.5">
+                      Password
+                    </p>
+                    <button
+                      onClick={() => handleCopy(revealCredentials.password, 'password')}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-primary-50 border border-primary-100 hover:bg-primary-100/60 transition-colors"
+                    >
+                      <span className="font-mono font-bold text-ink tracking-widest">
+                        {revealCredentials.password}
+                      </span>
+                      {copiedField === 'password' ? (
+                        <Check className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-ink/40" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-gold-50 text-gold-800 text-xs mb-6">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  Save this now - the password can't be shown again after you close this.
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={() => setRevealCredentials(null)}
+                  className="w-full"
+                >
+                  Done
                 </Button>
               </div>
             </motion.div>

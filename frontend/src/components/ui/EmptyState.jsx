@@ -20,17 +20,17 @@ export default function EmptyState({
       `}
     >
       {Icon && (
-        <div className="mb-6 p-6 rounded-2xl bg-slate-100 dark:bg-slate-800">
-          <Icon className="w-12 h-12 text-slate-400 dark:text-slate-500" />
+        <div className="mb-6 p-6 rounded-3xl bg-gradient-to-br from-primary-50 to-gold-50">
+          <Icon className="w-12 h-12 text-primary-400" />
         </div>
       )}
-      
-      <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+
+      <h3 className="font-display text-xl font-bold text-ink mb-2">
         {title}
       </h3>
-      
+
       {description && (
-        <p className="text-slate-600 dark:text-slate-400 max-w-sm mb-6">
+        <p className="text-ink/60 max-w-sm mb-6">
           {description}
         </p>
       )}

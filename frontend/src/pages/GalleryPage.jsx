@@ -1,226 +1,192 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Search, X, Loader2, Image as ImageIcon } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Calendar, Image as ImageIcon, LogOut } from 'lucide-react';
 
-import Card from '../components/ui/Card';
-import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import { GallerySkeleton } from '../components/ui/Skeleton';
 import MasonryGrid from '../components/gallery/MasonryGrid';
+import PhotoModal from '../components/gallery/PhotoModal';
+import AccessCard from '../components/gallery/AccessCard';
 import SearchBar from '../components/search/SearchBar';
-import { eventsAPI, photosAPI } from '../lib/api';
+import { photosAPI } from '../lib/api';
+import { getGallerySession, saveGallerySession, clearGallerySession } from '../lib/gallerySession';
+
+function formatWeddingDate(dateStr) {
+  if (!dateStr) return null;
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export default function GalleryPage() {
-  const [events, setEvents] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [session, setSession] = useState(() => getGallerySession());
   const [photos, setPhotos] = useState([]);
   const [searchResults, setSearchResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState(null);
 
   useEffect(() => {
-    fetchEvents();
-  }, []);
+    if (session) fetchPhotos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.event_id]);
 
-  useEffect(() => {
-    if (selectedEventId) {
-      fetchPhotos();
-    }
-  }, [selectedEventId]);
-
-  const fetchEvents = async () => {
-    try {
-      const response = await eventsAPI.getAll();
-      const eventList = response.data.data.events;
-      setEvents(eventList);
-      
-      if (eventList.length > 0 && !selectedEventId) {
-        setSelectedEventId(eventList[0].event_id);
-      }
-    } catch (error) {
-      console.error('Failed to fetch events:', error);
-    }
+  const handleSessionExpired = () => {
+    clearGallerySession();
+    setSession(null);
+    setPhotos([]);
+    setSearchResults(null);
   };
 
   const fetchPhotos = async () => {
-    if (!selectedEventId) return;
-    
+    if (!session) return;
+
     setLoading(true);
     try {
-      const response = await photosAPI.getByEvent(selectedEventId);
+      const response = await photosAPI.getByEvent(session.event_id);
       setPhotos(response.data.data.photos || []);
     } catch (error) {
-      console.error('Failed to fetch photos:', error);
-      setPhotos([]);
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        handleSessionExpired();
+      } else {
+        console.error('Failed to fetch photos:', error);
+        setPhotos([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleUnlock = (newSession) => {
+    saveGallerySession(newSession);
+    setSession(newSession);
+  };
+
+  const handleSwitchEvent = () => {
+    handleSessionExpired();
+  };
+
   const handleSearch = async (file) => {
-    if (!selectedEventId) return;
+    if (!session) return;
 
     setSearching(true);
     const formData = new FormData();
     formData.append('selfie', file);
 
     try {
-      const response = await photosAPI.searchByFace(formData, selectedEventId);
+      const response = await photosAPI.searchByFace(formData, session.event_id);
       setSearchResults(response.data.data.matches || []);
     } catch (error) {
-      console.error('Search failed:', error);
-      setSearchResults([]);
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        handleSessionExpired();
+      } else {
+        console.error('Search failed:', error);
+        setSearchResults([]);
+      }
     } finally {
       setSearching(false);
     }
   };
 
-  const handleClearSearch = () => {
-    setSearchResults(null);
-  };
+  const handleClearSearch = () => setSearchResults(null);
 
   const displayPhotos = searchResults || photos;
-  const selectedEvent = events.find(e => e.event_id === selectedEventId);
+  const coverImage = session?.cover_photo || (photos[0]?.file_path ?? null);
+
+  // Not unlocked yet - show the access card, same as the homepage
+  if (!session) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <AccessCard onUnlock={handleUnlock} />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Header Section */}
-      <div>
-        <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-          Wedding Gallery
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Browse beautiful moments and find your photos with AI
-        </p>
+    <div className="space-y-8 -mt-32">
+      {/* Private gallery hero - breaks out to full viewport width regardless
+          of the parent max-w-7xl container, for a true cinematic hero */}
+      <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen rounded-b-[2.5rem] overflow-hidden">
+        <div
+          className="relative min-h-[60vh] flex items-end bg-gradient-to-br from-[#1a1025] via-[#2a1454] to-[#3b1d63] bg-cover bg-center"
+          style={coverImage ? { backgroundImage: `linear-gradient(to top, rgba(26,16,37,0.92), rgba(26,16,37,0.35)), url(${coverImage})` } : undefined}
+        >
+          <button
+            onClick={handleSwitchEvent}
+            className="absolute top-28 right-6 z-10 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white/80 text-xs font-medium hover:bg-white/20 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Switch Event
+          </button>
+
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-5xl mx-auto px-6 pt-40 pb-14 text-center"
+          >
+            <p className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-gold-300 text-xs font-semibold tracking-wide uppercase mb-5">
+              Your Private Gallery
+            </p>
+            <h1 className="font-display text-4xl md:text-5xl font-extrabold text-white mb-3 text-balance">
+              {session.name}
+            </h1>
+            {session.event_date && (
+              <p className="flex items-center justify-center gap-2 text-white/70 text-lg">
+                <Calendar className="w-4 h-4" />
+                {formatWeddingDate(session.event_date)}
+              </p>
+            )}
+          </motion.div>
+        </div>
       </div>
 
-      {/* Event Selector */}
-      {events.length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {events.map((event) => (
-            <motion.button
-              key={event.event_id}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                setSelectedEventId(event.event_id);
-                setSearchResults(null);
-              }}
-              className={`
-                px-6 py-3 rounded-xl font-medium transition-all
-                ${selectedEventId === event.event_id
-                  ? 'bg-primary-600 text-white shadow-soft-lg'
-                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-soft'
-                }
-              `}
-            >
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                <span>{event.name}</span>
-                <Badge variant={selectedEventId === event.event_id ? 'neutral' : 'neutral'}>
-                  {event.photo_count}
-                </Badge>
-              </div>
-            </motion.button>
-          ))}
-        </div>
-      )}
-
-      {/* Search Section */}
-      {selectedEventId && (
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <SearchBar onSearch={handleSearch} loading={searching} />
-          </div>
-          
-          <div className="md:col-span-2">
-            {searchResults && (
-              <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      Search Results
-                    </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Found {searchResults.length} photos
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleClearSearch}
-                    variant="ghost"
-                    icon={X}
-                    size="sm"
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
+      {/* AI Face Search centerpiece */}
+      <SearchBar
+        onSearch={handleSearch}
+        loading={searching}
+        resultCount={searchResults ? searchResults.length : null}
+        onReset={handleClearSearch}
+      />
 
       {/* Gallery Section */}
       <div>
-        {!selectedEventId ? (
-          <EmptyState
-            icon={Calendar}
-            title="No event selected"
-            description="Select an event to view photos"
-          />
-        ) : loading ? (
+        {loading ? (
           <GallerySkeleton />
         ) : displayPhotos.length === 0 ? (
           <EmptyState
             icon={ImageIcon}
-            title={searchResults ? "No matches found" : "No photos yet"}
+            title={searchResults ? 'No matches found' : 'Photos are on their way'}
             description={
               searchResults
-                ? "Try uploading a different selfie"
-                : "Upload photos from the Admin page"
+                ? 'Try uploading a different, clearer selfie'
+                : "Your photographer hasn't uploaded photos yet - check back soon"
             }
           />
         ) : (
-          <MasonryGrid 
-            photos={displayPhotos} 
-            onPhotoClick={setSelectedPhoto}
+          <MasonryGrid
+            photos={displayPhotos}
+            onPhotoClick={(photo) =>
+              setSelectedIndex(displayPhotos.findIndex((p) => p.photo_id === photo.photo_id))
+            }
           />
         )}
       </div>
 
       {/* Photo Modal */}
       <AnimatePresence>
-        {selectedPhoto && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-            onClick={() => setSelectedPhoto(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-              className="relative max-w-4xl max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => setSelectedPhoto(null)}
-                className="absolute -top-12 right-0 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              
-              <img
-                src={selectedPhoto.file_path}
-                alt="Full size"
-                className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl"
-              />
-            </motion.div>
-          </motion.div>
+        {selectedIndex !== null && (
+          <PhotoModal
+            photos={displayPhotos}
+            index={selectedIndex}
+            onClose={() => setSelectedIndex(null)}
+            onNavigate={setSelectedIndex}
+          />
         )}
       </AnimatePresence>
     </div>

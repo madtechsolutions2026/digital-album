@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getGallerySession } from './gallerySession';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -9,6 +10,11 @@ const api = axios.create({
   },
 });
 
+function galleryAuthHeader() {
+  const session = getGallerySession();
+  return session?.token ? { Authorization: `Bearer ${session.token}` } : {};
+}
+
 export const eventsAPI = {
   getAll: () => api.get('/api/events'),
   create: (data) => api.post('/api/events', data),
@@ -17,21 +23,30 @@ export const eventsAPI = {
   processFaces: (id) => api.post(`/api/events/${id}/process-faces`),
 };
 
+export const galleryAPI = {
+  // Exchange an event code + password for a session token scoped to that event
+  access: (accessCode, password) =>
+    api.post('/api/gallery/access', { access_code: accessCode, password }),
+};
+
 export const photosAPI = {
-  upload: (formData, onProgress) => 
+  upload: (formData, onProgress) =>
     api.post('/api/photos/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: onProgress,
     }),
-  
-  getByEvent: (eventId) => api.get(`/api/photos/event/${eventId}`),
-  
+
+  getByEvent: (eventId) =>
+    api.get(`/api/photos/event/${eventId}`, {
+      headers: galleryAuthHeader(),
+    }),
+
   searchByFace: (formData, eventId, threshold = 0.6) => {
     // Backend expects event_id and threshold as form data, not query params
     formData.append('event_id', eventId);
     formData.append('threshold', threshold);
     return api.post('/api/photos/search', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': 'multipart/form-data', ...galleryAuthHeader() },
     });
   },
 };
