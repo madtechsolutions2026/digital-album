@@ -5,15 +5,15 @@ This module defines API endpoints for photo upload and face search operations.
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, Header, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
 from app.api.schemas import (
-    PhotoUploadResponse, PhotoUploadData, 
+    PhotoUploadResponse, PhotoUploadData,
     FaceSearchResponse, FaceSearchData, PhotoMatch, BoundingBox,
     HealthCheckResponse, HealthCheckData
 )
@@ -25,6 +25,7 @@ from app.services import (
 )
 from app.repositories import PhotoRepository
 from app.exceptions import ValidationError
+from app.services.auth import verify_gallery_access
 
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,11 @@ async def upload_photo(
     
     # Commit transaction
     await db.commit()
-    
+
+    from app.services.cache import events_list_cache, event_photos_cache
+    events_list_cache.invalidate("all")
+    event_photos_cache.invalidate(str(event_id))
+
     # Prepare response message
     if skip_face_detection:
         message = "Photo uploaded successfully (face detection skipped for speed)"
@@ -197,26 +202,32 @@ async def search_by_face(
     event_id: Annotated[int, Form(description="ID of the event to search in")],
     threshold: Annotated[float, Form(description="Minimum similarity threshold (0.0 to 1.0)", ge=0.0, le=1.0)] = 0.6,
     photo_service: PhotoService = Depends(get_photo_service),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    authorization: Annotated[Optional[str], Header()] = None
 ) -> FaceSearchResponse:
     """
     Search for photos containing a face similar to the uploaded selfie.
-    
+
     Args:
         selfie: Uploaded selfie image
         event_id: ID of the event to search in
         threshold: Minimum similarity threshold (default: 0.6)
         photo_service: Photo service (injected)
         db: Database session (injected)
-        
+        authorization: Bearer gallery session token, scoped to event_id
+
     Returns:
         FaceSearchResponse with list of matching photos
-        
+
     Raises:
+        UnauthorizedError: If the access token is missing or invalid (401)
+        ForbiddenError: If the token isn't scoped to this event (403)
         ValidationError: If selfie validation fails or no face detected (400)
         EventNotFoundError: If event doesn't exist (404)
         DatabaseError: If database operation fails (503)
     """
+    verify_gallery_access(authorization, event_id)
+
     logger.info(
         f"Face search request: filename={selfie.filename}, event_id={event_id}, threshold={threshold}",
         extra={
@@ -296,35 +307,49 @@ async def search_by_face(
 )
 async def get_event_photos(
     event_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    authorization: Annotated[Optional[str], Header()] = None
 ):
     """
     Get all photos from an event.
-    
+
     Args:
         event_id: ID of the event
         db: Database session
-        
+        authorization: Bearer gallery session token, scoped to event_id
+
     Returns:
         List of photos with metadata
+
+    Raises:
+        UnauthorizedError: If the access token is missing or invalid (401)
+        ForbiddenError: If the token isn't scoped to this event (403)
     """
+    verify_gallery_access(authorization, event_id)
+
     from app.repositories import PhotoRepository
-    
+    from app.services.cache import event_photos_cache
+
+    cache_key = str(event_id)
+    cached = event_photos_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     photo_repo = PhotoRepository(db)
-    
+
     # Verify event exists
     await photo_repo.verify_event_exists(event_id)
-    
+
     # Get all photos for this event
     from sqlalchemy import select
     from app.models.photo import Photo
-    
+
     result = await db.execute(
         select(Photo).where(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc())
     )
     photos = result.scalars().all()
-    
-    return {
+
+    response = {
         "success": True,
         "message": f"Retrieved {len(photos)} photos",
         "data": {
@@ -340,3 +365,5 @@ async def get_event_photos(
             ]
         }
     }
+    event_photos_cache.set(cache_key, response)
+    return response

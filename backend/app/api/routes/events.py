@@ -27,7 +27,8 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 class EventCreate(BaseModel):
     """Request model for creating a new event."""
     name: str = Field(..., min_length=1, max_length=200, description="Event name")
-    event_date: Optional[date] = Field(None, description="Event date (optional)")
+    # Required - the events table has a NOT NULL constraint on event_date.
+    event_date: date = Field(..., description="Event date")
 
 
 class EventResponse(BaseModel):
@@ -57,29 +58,49 @@ async def create_event(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Create a new event.
-    
+    Create a new private event with a generated access code + password.
+
+    The plaintext password is only ever returned in this response - it's
+    stored as a bcrypt hash from here on, so the photographer must save
+    or share it now.
+
     Args:
         event_data: Event creation data
         db: Database session
-        
+
     Returns:
-        Created event details
+        Created event details, including the one-time plaintext credentials
     """
+    from app.services.auth import generate_access_code, generate_password, hash_password
+
     logger.info(f"Creating new event: {event_data.name}")
-    
-    # Create event
+
+    # Generate a unique access code (astronomically unlikely to collide,
+    # but retry on the rare chance it does)
+    access_code = generate_access_code()
+    while (await db.execute(
+        select(Event).where(Event.access_code == access_code)
+    )).scalar_one_or_none():
+        access_code = generate_access_code()
+
+    password = generate_password()
+
     event = Event(
         name=event_data.name,
-        event_date=event_data.event_date
+        event_date=event_data.event_date,
+        access_code=access_code,
+        password_hash=hash_password(password)
     )
-    
+
     db.add(event)
     await db.commit()
     await db.refresh(event)
-    
-    logger.info(f"Event created: ID={event.event_id}, name={event.name}")
-    
+
+    from app.services.cache import events_list_cache
+    events_list_cache.invalidate("all")
+
+    logger.info(f"Event created: ID={event.event_id}, name={event.name}, access_code={access_code}")
+
     return {
         "success": True,
         "message": "Event created successfully",
@@ -87,7 +108,9 @@ async def create_event(
             "event_id": event.event_id,
             "name": event.name,
             "event_date": event.event_date.isoformat() if event.event_date else None,
-            "created_at": event.created_at.isoformat()
+            "created_at": event.created_at.isoformat(),
+            "access_code": access_code,
+            "password": password
         }
     }
 
@@ -103,15 +126,20 @@ async def list_events(
 ):
     """
     List all events with photo counts.
-    
+
     Args:
         db: Database session
-        
+
     Returns:
         List of events with metadata
     """
     from app.models.photo import Photo
-    
+    from app.services.cache import events_list_cache
+
+    cached = events_list_cache.get("all")
+    if cached is not None:
+        return cached
+
     # Get all events with photo counts
     result = await db.execute(
         select(
@@ -119,29 +147,31 @@ async def list_events(
             Event.name,
             Event.event_date,
             Event.created_at,
+            Event.access_code,
             func.count(Photo.photo_id).label('photo_count')
         )
         .outerjoin(Photo, Event.event_id == Photo.event_id)
         .group_by(Event.event_id)
         .order_by(Event.created_at.desc())
     )
-    
+
     events_data = result.all()
-    
+
     events = [
         {
             "event_id": row.event_id,
             "name": row.name,
             "event_date": row.event_date.isoformat() if row.event_date else None,
             "created_at": row.created_at.isoformat(),
+            "access_code": row.access_code,
             "photo_count": row.photo_count
         }
         for row in events_data
     ]
     
     logger.info(f"Retrieved {len(events)} events")
-    
-    return {
+
+    response = {
         "success": True,
         "message": f"Retrieved {len(events)} events",
         "data": {
@@ -149,6 +179,8 @@ async def list_events(
             "total": len(events)
         }
     }
+    events_list_cache.set("all", response)
+    return response
 
 
 @router.get(
@@ -275,6 +307,10 @@ async def delete_event(
     # Delete event (cascade will delete photos and embeddings)
     await db.delete(event)
     await db.commit()
+
+    from app.services.cache import events_list_cache, event_photos_cache
+    events_list_cache.invalidate("all")
+    event_photos_cache.invalidate(str(event_id))
 
     logger.info(
         f"Event deleted: ID={event_id}, name={event.name}, "

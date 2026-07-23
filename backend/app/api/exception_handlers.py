@@ -17,7 +17,9 @@ from app.exceptions import (
     ValidationError,
     EventNotFoundError,
     FaceDetectionError,
-    DatabaseError
+    DatabaseError,
+    UnauthorizedError,
+    ForbiddenError
 )
 
 
@@ -166,6 +168,40 @@ async def face_detection_error_handler(request: Request, exc: FaceDetectionError
     
     return create_error_response(
         status_code=status_code,
+        message=exc.message,
+        error_code=exc.code,
+        request_id=request_id
+    )
+
+
+async def unauthorized_error_handler(request: Request, exc: UnauthorizedError) -> JSONResponse:
+    """Handle UnauthorizedError exceptions. Returns 401 Unauthorized."""
+    request_id = getattr(request.state, "request_id", None)
+
+    logger.warning(
+        f"Unauthorized: {exc.message}",
+        extra={"request_id": request_id, "error_code": exc.code, "path": request.url.path}
+    )
+
+    return create_error_response(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        message=exc.message,
+        error_code=exc.code,
+        request_id=request_id
+    )
+
+
+async def forbidden_error_handler(request: Request, exc: ForbiddenError) -> JSONResponse:
+    """Handle ForbiddenError exceptions. Returns 403 Forbidden."""
+    request_id = getattr(request.state, "request_id", None)
+
+    logger.warning(
+        f"Forbidden: {exc.message}",
+        extra={"request_id": request_id, "error_code": exc.code, "path": request.url.path}
+    )
+
+    return create_error_response(
+        status_code=status.HTTP_403_FORBIDDEN,
         message=exc.message,
         error_code=exc.code,
         request_id=request_id
@@ -325,6 +361,8 @@ def register_exception_handlers(app) -> None:
     app.add_exception_handler(EventNotFoundError, event_not_found_handler)
     app.add_exception_handler(FaceDetectionError, face_detection_error_handler)
     app.add_exception_handler(DatabaseError, database_error_handler)
+    app.add_exception_handler(UnauthorizedError, unauthorized_error_handler)
+    app.add_exception_handler(ForbiddenError, forbidden_error_handler)
     app.add_exception_handler(AppException, app_exception_handler)
     
     # Register SQLAlchemy exception handler

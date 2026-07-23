@@ -52,7 +52,25 @@ class Event(Base):
         nullable=False,
         comment="Date and time of the event",
     )
-    
+
+    # Private access credentials - guests unlock the gallery with these
+    # instead of creating an account. access_code is shown to guests
+    # directly; password_hash is bcrypt, the plaintext password is only
+    # ever returned once, at creation time.
+    access_code: Mapped[str] = mapped_column(
+        String(12),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Unique code guests enter to access this event's gallery",
+    )
+
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Bcrypt hash of the access password (plaintext shown once at creation)",
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

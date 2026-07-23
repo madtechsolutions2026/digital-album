@@ -82,6 +82,29 @@ class FaceDetectionError(AppException):
         super().__init__(message, "FACE_DETECTION_ERROR")
 
 
+class UnauthorizedError(AppException):
+    """Raised when a gallery request has no valid access token.
+
+    Examples:
+        - No Authorization header on a gallery-scoped request
+        - Access token is malformed, expired, or has an invalid signature
+    """
+
+    def __init__(self, message: str = "Missing or invalid access token"):
+        super().__init__(message, "UNAUTHORIZED")
+
+
+class ForbiddenError(AppException):
+    """Raised when a valid access token doesn't authorize the requested event.
+
+    Examples:
+        - A token scoped to event 5 is used to request event 7's photos
+    """
+
+    def __init__(self, message: str = "Not authorized for this event"):
+        super().__init__(message, "FORBIDDEN")
+
+
 class DatabaseError(AppException):
     """Raised when database operations fail.
     

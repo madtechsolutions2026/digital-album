@@ -76,12 +76,29 @@ class Settings(BaseSettings):
         default=2048,
         description="Images larger than this dimension will be resized before face detection"
     )
+
+    MAX_CONCURRENT_UPLOADS: int = Field(
+        default=8,
+        description=(
+            "Maximum number of photos processed (validate/compress/upload) at the "
+            "same time, regardless of how many upload requests arrive concurrently. "
+            "Bounds CPU and memory usage under large batch uploads; excess requests "
+            "queue rather than all running at once."
+        )
+    )
     
-    # CORS configuration  
+    # CORS configuration
     # Using Union to accept both string and list, validator will normalize to list
     CORS_ORIGINS: Union[str, List[str]] = Field(
         default="http://localhost:3000",
         description="Allowed CORS origins as comma-separated string or list"
+    )
+
+    # Gallery access token signing. Change this in production - the default
+    # is dev-only and not a secret.
+    JWT_SECRET: str = Field(
+        default="dev-only-insecure-secret-change-me",
+        description="Secret used to sign gallery access tokens (event code/password login)"
     )
     
     # Logging configuration
@@ -213,9 +230,30 @@ class Settings(BaseSettings):
         """
         if v <= 0:
             raise ValueError("RESIZE_THRESHOLD must be a positive integer")
-        
+
         return v
-    
+
+    @field_validator("MAX_CONCURRENT_UPLOADS")
+    @classmethod
+    def validate_max_concurrent_uploads(cls, v: int, info: ValidationInfo) -> int:
+        """
+        Validate MAX_CONCURRENT_UPLOADS is positive.
+
+        Args:
+            v: The MAX_CONCURRENT_UPLOADS value
+            info: Validation context
+
+        Returns:
+            The validated MAX_CONCURRENT_UPLOADS
+
+        Raises:
+            ValueError: If MAX_CONCURRENT_UPLOADS is not positive
+        """
+        if v <= 0:
+            raise ValueError("MAX_CONCURRENT_UPLOADS must be a positive integer")
+
+        return v
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v) -> List[str]:

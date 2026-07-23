@@ -22,6 +22,24 @@ from app.exceptions import ValidationError, FaceDetectionError, EventNotFoundErr
 from app.config import get_settings
 
 
+# Global semaphore bounding how many photos are validated/compressed/uploaded
+# at the same time, across all requests. Without this, a large concurrent
+# batch upload has no limit on how many CPU-heavy compression jobs and
+# in-memory images pile up at once. Lazily created so it binds to whichever
+# event loop is actually running (uvicorn's), not import time.
+_upload_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_upload_semaphore() -> asyncio.Semaphore:
+    global _upload_semaphore
+
+    if _upload_semaphore is None:
+        settings = get_settings()
+        _upload_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_UPLOADS)
+
+    return _upload_semaphore
+
+
 class PhotoUploadResult:
     """
     Result of a photo upload operation.
@@ -142,43 +160,48 @@ class PhotoService:
         if event is None:
             raise EventNotFoundError(event_id)
         
-        # Step 2: Validate and prepare image. CPU-bound (PIL decode/resize),
-        # so run it off the event loop thread to allow concurrent uploads.
-        image, format_str, original_size = await asyncio.to_thread(
-            self.image_validator.validate_and_prepare, file_content, filename
-        )
-        
-        self.logger.info(
-            f"Image validated: format={format_str}, size={original_size}",
-            extra={
-                "uploaded_filename": filename,
-                "format": format_str,
-                "original_size": original_size,
-                "final_size": image.size
-            }
-        )
-        
-        # Step 3: Save image to disk or R2. Compression (CPU-bound) and the
-        # storage upload (blocking network I/O) both happen inside these
-        # sync calls, so run them off the event loop thread too.
-        if self.settings.STORAGE_TYPE == 'r2' and self.r2_storage:
-            relative_path = await asyncio.to_thread(
-                self.r2_storage.save_image,
-                image=image,
-                event_id=event_id,
-                event_name=event.name,
-                format=format_str,
-                original_filename=filename
+        # Steps 2-3 are the CPU/memory-heavy part of an upload (image decode,
+        # resize, WebP compression, storage upload). Gate them with a
+        # semaphore so a large concurrent batch queues cleanly instead of
+        # running unbounded decode+compress work in parallel.
+        async with _get_upload_semaphore():
+            # Step 2: Validate and prepare image. CPU-bound (PIL decode/resize),
+            # so run it off the event loop thread to allow concurrent uploads.
+            image, format_str, original_size = await asyncio.to_thread(
+                self.image_validator.validate_and_prepare, file_content, filename
             )
-        else:
-            relative_path = await asyncio.to_thread(
-                self.file_storage.save_image,
-                image=image,
-                event_id=event_id,
-                event_name=event.name,
-                format=format_str,
-                original_filename=filename
+
+            self.logger.info(
+                f"Image validated: format={format_str}, size={original_size}",
+                extra={
+                    "uploaded_filename": filename,
+                    "format": format_str,
+                    "original_size": original_size,
+                    "final_size": image.size
+                }
             )
+
+            # Step 3: Save image to disk or R2. Compression (CPU-bound) and the
+            # storage upload (blocking network I/O) both happen inside these
+            # sync calls, so run them off the event loop thread too.
+            if self.settings.STORAGE_TYPE == 'r2' and self.r2_storage:
+                relative_path = await asyncio.to_thread(
+                    self.r2_storage.save_image,
+                    image=image,
+                    event_id=event_id,
+                    event_name=event.name,
+                    format=format_str,
+                    original_filename=filename
+                )
+            else:
+                relative_path = await asyncio.to_thread(
+                    self.file_storage.save_image,
+                    image=image,
+                    event_id=event_id,
+                    event_name=event.name,
+                    format=format_str,
+                    original_filename=filename
+                )
         
         # Prepare metadata for database
         metadata = {

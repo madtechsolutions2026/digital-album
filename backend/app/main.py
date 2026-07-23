@@ -25,7 +25,7 @@ from app.config import get_settings
 from app.logging_config import setup_logging
 from app.middleware import RequestIDMiddleware
 from app.api.exception_handlers import register_exception_handlers
-from app.api.routes import photos_router, events_router, jobs_router
+from app.api.routes import photos_router, events_router, jobs_router, gallery_router
 from app.api.schemas import HealthCheckResponse, HealthCheckData
 from app.services import get_face_service
 from app.database import close_db, get_db
@@ -151,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(photos_router)
     app.include_router(events_router)
     app.include_router(jobs_router)
+    app.include_router(gallery_router)
     logger.info("API routers registered")
     
     # Mount static files for photo serving
