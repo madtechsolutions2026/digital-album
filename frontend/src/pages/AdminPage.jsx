@@ -145,8 +145,8 @@ export default function AdminPage() {
             const category = getFileCategory(file);
             if (category) formData.append('category', category);
 
-            await photosAPI.upload(formData);
-            newStatus[file.name] = { success: true };
+            const response = await photosAPI.upload(formData);
+            newStatus[file.name] = { success: true, url: response.data.data.file_path };
             successCount++;
           } catch (error) {
             newStatus[file.name] = { error: true };

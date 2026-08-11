@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { X, File, CheckCircle2 } from 'lucide-react';
+import { X, File, Image as ImageIcon } from 'lucide-react';
 
 export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
   if (!files || files.length === 0) return null;
@@ -7,9 +7,12 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
       {files.map((file, index) => {
-        const isSuccess = uploadStatus[file.name]?.success;
-        const isError = uploadStatus[file.name]?.error;
-        const isUploading = uploadStatus[file.name]?.uploading;
+        const status = uploadStatus[file.name];
+        const isError = status?.error;
+        const isUploading = status?.uploading;
+        // Uploaded thumbnail (compressed R2 WebP) once available - avoids ever
+        // decoding the raw local file (300-400/folder would spike memory).
+        const uploadedUrl = status?.url;
         const relPath = file.webkitRelativePath;
         const category = relPath ? relPath.split('/').slice(-2, -1)[0] : null;
 
@@ -23,16 +26,20 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
             className="relative group"
           >
             <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              {file.type?.startsWith('image/') ? (
+              {uploadedUrl ? (
                 <img
-                  src={URL.createObjectURL(file)}
+                  src={uploadedUrl}
                   alt={file.name}
                   className="w-full h-full object-cover"
-                  onLoad={(e) => URL.revokeObjectURL(e.target.src)}
+                  loading="lazy"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <File className="w-8 h-8 text-slate-400" />
+                  {file.type?.startsWith('image/') ? (
+                    <ImageIcon className="w-8 h-8 text-slate-400" />
+                  ) : (
+                    <File className="w-8 h-8 text-slate-400" />
+                  )}
                 </div>
               )}
 
@@ -41,16 +48,6 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
                 </div>
-              )}
-
-              {isSuccess && (
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center"
-                >
-                  <CheckCircle2 className="w-8 h-8 text-emerald-500" />
-                </motion.div>
               )}
 
               {isError && (
