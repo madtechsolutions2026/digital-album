@@ -9,11 +9,7 @@ import asyncio
 import logging
 from typing import List, Optional, Tuple
 import numpy as np
-import cv2
 from PIL import Image
-
-from insightface.app import FaceAnalysis
-from insightface.model_zoo import get_model
 
 from app.exceptions import FaceDetectionError
 
@@ -109,6 +105,12 @@ class FaceRecognitionService:
         self.logger.info("Initializing FaceRecognitionService with buffalo_l model...")
         
         try:
+            # Lazy import: insightface pulls in cv2/onnxruntime which require
+            # X11 libs (libxcb) that aren't present in minimal runtimes.
+            # Importing here (instead of at module level) allows the app to
+            # start even if face recognition is never used.
+            from insightface.app import FaceAnalysis
+
             # Initialize FaceAnalysis with buffalo_l model
             self.app = FaceAnalysis(
                 name='buffalo_l',
@@ -142,6 +144,11 @@ class FaceRecognitionService:
             FaceDetectionError: If face detection fails
         """
         try:
+            # Lazy import: cv2 requires X11 libs (libxcb) that aren't present
+            # in minimal runtimes, so it's imported here rather than at
+            # module level.
+            import cv2
+
             # Convert PIL Image to numpy array (RGB)
             img_array = np.array(image)
             
