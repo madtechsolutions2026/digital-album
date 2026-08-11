@@ -51,8 +51,7 @@ async def get_photo_service(db: AsyncSession = Depends(get_db)) -> PhotoService:
     photo_repo = PhotoRepository(db)
     image_validator = ImageValidator()
     file_storage = FileStorageService()
-    face_service = get_face_service()
-    
+
     # Initialize R2 storage if configured (cached singleton - avoids
     # rebuilding the boto3 client/connection pool on every request)
     r2_storage = None
@@ -62,12 +61,15 @@ async def get_photo_service(db: AsyncSession = Depends(get_db)) -> PhotoService:
             r2_storage = get_r2_storage_service()
         except ValueError as e:
             logger.warning(f"R2 storage not configured properly: {e}")
-    
+
     return PhotoService(
         photo_repository=photo_repo,
         image_validator=image_validator,
         file_storage=file_storage,
-        face_service=face_service,
+        # Pass the getter itself, not its result - calling get_face_service()
+        # loads the InsightFace model, which should only happen for requests
+        # that actually run face detection, not every upload/search call.
+        face_service_factory=get_face_service,
         r2_storage=r2_storage
     )
 

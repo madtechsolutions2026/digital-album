@@ -11,7 +11,7 @@ This module coordinates the entire photo upload workflow:
 
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Callable, Dict, Any, List, Optional
 
 from app.services.image_validator import ImageValidator
 from app.services.file_storage import FileStorageService
@@ -97,26 +97,34 @@ class PhotoService:
         photo_repository: PhotoRepository,
         image_validator: ImageValidator,
         file_storage: FileStorageService,
-        face_service: FaceRecognitionService,
+        face_service_factory: Callable[[], FaceRecognitionService],
         r2_storage: Optional[R2StorageService] = None
     ):
         """
         Initialize the photo service with dependencies.
-        
+
         Args:
             photo_repository: Repository for database operations
             image_validator: Service for image validation
             file_storage: Service for local file storage
-            face_service: Service for face detection and recognition
+            face_service_factory: Callable returning the face recognition
+                service (e.g. get_face_service). Not called here - resolving
+                it loads the InsightFace model, so it must stay lazy and only
+                run on code paths that actually need face detection
+                (skip_face_detection=false uploads, and searches).
             r2_storage: Optional R2 storage service
         """
         self.photo_repo = photo_repository
         self.image_validator = image_validator
         self.file_storage = file_storage
         self.r2_storage = r2_storage
-        self.face_service = face_service
+        self._face_service_factory = face_service_factory
         self.logger = logging.getLogger(__name__)
         self.settings = get_settings()
+
+    @property
+    def face_service(self) -> FaceRecognitionService:
+        return self._face_service_factory()
     
     async def upload_photo(
         self,
