@@ -1,0 +1,5 @@
+# OpenCV (pulled in transitively by insightface) still dynamically links a
+# handful of X11 libraries even in the "headless" wheel. Railway's minimal
+# build image doesn't ship them, so install them at build time.
+[phases.setup]
+aptPkgs = ["libgl1", "libglib2.0-0", "libsm6", "libxext6", "libxrender1", "libxcb1"]
