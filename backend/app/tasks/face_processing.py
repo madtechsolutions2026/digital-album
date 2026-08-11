@@ -7,6 +7,7 @@ for one photographer at a time, so a dedicated worker process/broker was
 unnecessary complexity; job progress is tracked in-memory via job_store.
 """
 
+import asyncio
 import logging
 from typing import Dict, Any
 from PIL import Image
@@ -73,7 +74,11 @@ async def process_faces_background(job_id: str, event_id: int) -> None:
             total_photos = len(photos_to_process)
             logger.info(f"Found {total_photos} photos to process for event {event_id}")
 
-            face_service = get_face_service()
+            # Loading the InsightFace model (first use) is a slow, synchronous,
+            # CPU-heavy operation - run it off the event loop thread so it
+            # doesn't stall other requests (e.g. job-status polling) being
+            # served by this same process in the meantime.
+            face_service = await asyncio.to_thread(get_face_service)
 
             processed_count = 0
             skipped_count = 0
