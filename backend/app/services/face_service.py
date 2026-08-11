@@ -2,7 +2,9 @@
 Face recognition service using InsightFace.
 
 This module provides face detection and embedding generation using the
-InsightFace library with the buffalo_l model for high-quality face recognition.
+InsightFace library with the buffalo_s model - chosen over the larger
+buffalo_l pack to keep memory/download footprint low on constrained hosts,
+while keeping the same 512-dim embedding output.
 """
 
 import asyncio
@@ -88,8 +90,8 @@ class FaceRecognitionService:
     """
     Service for face detection and embedding generation using InsightFace.
     
-    Uses the buffalo_l model which provides:
-    - High-quality face detection
+    Uses the buffalo_s model which provides:
+    - Lightweight face detection (small download/RAM footprint)
     - 512-dimensional embeddings
     - Good performance on diverse faces
     """
@@ -98,12 +100,12 @@ class FaceRecognitionService:
         """
         Initialize the face recognition service.
         
-        Loads the InsightFace buffalo_l model with CPU provider.
+        Loads the InsightFace buffalo_s model with CPU provider.
         This may take a few seconds on first initialization.
         """
         self.logger = logging.getLogger(__name__)
-        self.logger.info("Initializing FaceRecognitionService with buffalo_l model...")
-        
+        self.logger.info("Initializing FaceRecognitionService with buffalo_s model...")
+
         try:
             # Lazy import: insightface pulls in cv2/onnxruntime which require
             # X11 libs (libxcb) that aren't present in minimal runtimes.
@@ -111,9 +113,12 @@ class FaceRecognitionService:
             # start even if face recognition is never used.
             from insightface.app import FaceAnalysis
 
-            # Initialize FaceAnalysis with buffalo_l model
+            # buffalo_s (not buffalo_l): same 512-dim embedding output (so
+            # existing pgvector data/schema stays compatible), but a much
+            # smaller download and RAM footprint - keeps this running on
+            # Railway's default memory tier without needing a paid upgrade.
             self.app = FaceAnalysis(
-                name='buffalo_l',
+                name='buffalo_s',
                 providers=['CPUExecutionProvider']  # Use CPU for compatibility
             )
             
