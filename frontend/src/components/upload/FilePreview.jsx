@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { X, File, Image as ImageIcon } from 'lucide-react';
+import { getFileCategory } from '../../lib/fileCategory';
 
 export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
   if (!files || files.length === 0) return null;
@@ -13,8 +14,7 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
         // Uploaded thumbnail (compressed R2 WebP) once available - avoids ever
         // decoding the raw local file (300-400/folder would spike memory).
         const uploadedUrl = status?.url;
-        const relPath = file.webkitRelativePath;
-        const category = relPath ? relPath.split('/').slice(-2, -1)[0] : null;
+        const category = getFileCategory(file);
 
         return (
           <motion.div

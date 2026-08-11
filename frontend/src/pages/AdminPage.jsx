@@ -11,16 +11,7 @@ import FilePreview from '../components/upload/FilePreview';
 import UploadStatusPanel from '../components/upload/UploadStatusPanel';
 import { eventsAPI, photosAPI, jobsAPI } from '../lib/api';
 import { resizeImageFile } from '../lib/imageResize';
-
-// Folder uploads (webkitdirectory) carry the relative path on the File,
-// e.g. "Sharma Wedding/Haldi/IMG001.jpg" - the immediate parent folder
-// becomes the photo's category so guests can browse by ceremony.
-function getFileCategory(file) {
-  const relPath = file.webkitRelativePath;
-  if (!relPath) return null;
-  const parts = relPath.split('/');
-  return parts.length >= 2 ? parts[parts.length - 2] : null;
-}
+import { getFileCategory } from '../lib/fileCategory';
 
 export default function AdminPage() {
   const [events, setEvents] = useState([]);
@@ -161,11 +152,15 @@ export default function AdminPage() {
     setUploadLoading(false);
     await fetchEvents();
 
-    // Automatically kick off face processing so the event is searchable
-    // without requiring a manual click.
-    if (successCount > 0) {
-      await handleProcessFaces(selectedEventId);
-    }
+    // Face detection auto-trigger is temporarily disabled (memory pressure
+    // on the backend - InsightFace is heavy and running it on every upload
+    // was contributing to OOM restarts). Uploads still work fine on their
+    // own. To re-enable: uncomment this block and flip
+    // FACE_DETECTION_ENABLED back to true in UploadStatusPanel.jsx.
+    //
+    // if (successCount > 0) {
+    //   await handleProcessFaces(selectedEventId);
+    // }
   };
 
   const handleProcessFaces = async (eventId) => {

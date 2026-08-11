@@ -33,6 +33,13 @@ function StepIcon({ state }) {
   );
 }
 
+// Face detection is temporarily disabled from the upload flow (memory
+// pressure on the backend - InsightFace is heavy and was triggering on
+// every upload). Uploads still work; face processing is just not
+// auto-triggered or shown here for now. Flip this back to true - and the
+// auto-trigger in AdminPage.jsx's handleUpload - to re-enable.
+const FACE_DETECTION_ENABLED = false;
+
 export default function UploadStatusPanel({
   isVisible,
   uploading,
@@ -63,7 +70,9 @@ export default function UploadStatusPanel({
     ? 'done'
     : 'pending';
 
-  const allDone = uploadComplete && (faceComplete || processingFailed);
+  const allDone = FACE_DETECTION_ENABLED
+    ? uploadComplete && (faceComplete || processingFailed)
+    : uploadComplete;
 
   return (
     <AnimatePresence>
@@ -113,42 +122,44 @@ export default function UploadStatusPanel({
               </div>
             </div>
 
-            {/* Step 2: Face processing */}
-            <div className="flex gap-4">
-              <StepIcon state={faceState} />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    Detecting faces
-                  </span>
-                  {faceTotal > 0 && (
-                    <span className="text-sm text-slate-500 dark:text-slate-400">
-                      {faceCurrent} / {faceTotal}
+            {/* Step 2: Face processing - hidden while FACE_DETECTION_ENABLED is false */}
+            {FACE_DETECTION_ENABLED && (
+              <div className="flex gap-4">
+                <StepIcon state={faceState} />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      Detecting faces
                     </span>
+                    {faceTotal > 0 && (
+                      <span className="text-sm text-slate-500 dark:text-slate-400">
+                        {faceCurrent} / {faceTotal}
+                      </span>
+                    )}
+                  </div>
+                  {faceTotal > 0 || processingFaces ? (
+                    <ProgressBar value={faceCurrent} max={faceTotal || 1} showPercentage={false} />
+                  ) : (
+                    <p className="text-sm text-slate-400 dark:text-slate-500">
+                      Waiting for upload to finish...
+                    </p>
+                  )}
+                  {jobStatus?.faces_found > 0 && (
+                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
+                      {jobStatus.faces_found} faces found so far
+                    </p>
+                  )}
+                  {processingFailed && (
+                    <p className="text-xs text-rose-600 dark:text-rose-400 mt-2">
+                      Face processing failed. Retry from the event card once ready.
+                    </p>
                   )}
                 </div>
-                {faceTotal > 0 || processingFaces ? (
-                  <ProgressBar value={faceCurrent} max={faceTotal || 1} showPercentage={false} />
-                ) : (
-                  <p className="text-sm text-slate-400 dark:text-slate-500">
-                    Waiting for upload to finish...
-                  </p>
-                )}
-                {jobStatus?.faces_found > 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                    {jobStatus.faces_found} faces found so far
-                  </p>
-                )}
-                {processingFailed && (
-                  <p className="text-xs text-rose-600 dark:text-rose-400 mt-2">
-                    Face processing failed. Retry from the event card once ready.
-                  </p>
-                )}
               </div>
-            </div>
+            )}
           </div>
 
-          {faceComplete && (
+          {FACE_DETECTION_ENABLED && faceComplete && (
             <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
               <Sparkles className="w-4 h-4" />
               Photos are searchable in the gallery now.
