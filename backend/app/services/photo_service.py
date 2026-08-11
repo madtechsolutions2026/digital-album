@@ -123,7 +123,8 @@ class PhotoService:
         file_content: bytes,
         filename: str,
         event_id: int,
-        skip_face_detection: bool = False
+        skip_face_detection: bool = False,
+        category: Optional[str] = None
     ) -> PhotoUploadResult:
         """
         Upload and process a photo.
@@ -215,7 +216,8 @@ class PhotoService:
                 "width": image.size[0],
                 "height": image.size[1]
             },
-            "file_size_bytes": len(file_content)
+            "file_size_bytes": len(file_content),
+            "category": category
         }
         
         # Step 4: Create photo record

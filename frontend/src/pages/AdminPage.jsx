@@ -12,6 +12,16 @@ import UploadStatusPanel from '../components/upload/UploadStatusPanel';
 import { eventsAPI, photosAPI, jobsAPI } from '../lib/api';
 import { resizeImageFile } from '../lib/imageResize';
 
+// Folder uploads (webkitdirectory) carry the relative path on the File,
+// e.g. "Sharma Wedding/Haldi/IMG001.jpg" - the immediate parent folder
+// becomes the photo's category so guests can browse by ceremony.
+function getFileCategory(file) {
+  const relPath = file.webkitRelativePath;
+  if (!relPath) return null;
+  const parts = relPath.split('/');
+  return parts.length >= 2 ? parts[parts.length - 2] : null;
+}
+
 export default function AdminPage() {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -131,6 +141,9 @@ export default function AdminPage() {
             formData.append('file', uploadFile);
             formData.append('event_id', selectedEventId);
             formData.append('skip_face_detection', 'true');
+
+            const category = getFileCategory(file);
+            if (category) formData.append('category', category);
 
             await photosAPI.upload(formData);
             newStatus[file.name] = { success: true };

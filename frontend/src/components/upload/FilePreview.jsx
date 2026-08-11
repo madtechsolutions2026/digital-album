@@ -10,6 +10,8 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
         const isSuccess = uploadStatus[file.name]?.success;
         const isError = uploadStatus[file.name]?.error;
         const isUploading = uploadStatus[file.name]?.uploading;
+        const relPath = file.webkitRelativePath;
+        const category = relPath ? relPath.split('/').slice(-2, -1)[0] : null;
 
         return (
           <motion.div
@@ -55,6 +57,13 @@ export default function FilePreview({ files, onRemove, uploadStatus = {} }) {
                 <div className="absolute inset-0 bg-rose-500/20 flex items-center justify-center">
                   <X className="w-8 h-8 text-rose-500" />
                 </div>
+              )}
+
+              {/* Category Badge */}
+              {category && (
+                <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-medium truncate max-w-[80%]">
+                  {category}
+                </span>
               )}
 
               {/* Remove Button */}

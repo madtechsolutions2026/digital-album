@@ -97,6 +97,7 @@ async def upload_photo(
     file: Annotated[UploadFile, File(description="Image file to upload")],
     event_id: Annotated[int, Form(description="ID of the event this photo belongs to")],
     skip_face_detection: Annotated[bool, Form(description="Skip face detection for faster upload")] = False,
+    category: Annotated[Optional[str], Form(description="Optional sub-category label, e.g. the folder name (Haldi, Groom Home)")] = None,
     photo_service: PhotoService = Depends(get_photo_service),
     db: AsyncSession = Depends(get_db)
 ) -> PhotoUploadResponse:
@@ -141,7 +142,8 @@ async def upload_photo(
         file_content=file_content,
         filename=file.filename or "unknown",
         event_id=event_id,
-        skip_face_detection=skip_face_detection
+        skip_face_detection=skip_face_detection,
+        category=category.strip() if category and category.strip() else None
     )
     
     # Commit transaction

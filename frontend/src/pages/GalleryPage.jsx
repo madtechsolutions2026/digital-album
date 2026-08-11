@@ -28,6 +28,7 @@ export default function GalleryPage() {
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [activeCategory, setActiveCategory] = useState('All');
 
   useEffect(() => {
     if (session) fetchPhotos();
@@ -93,7 +94,17 @@ export default function GalleryPage() {
 
   const handleClearSearch = () => setSearchResults(null);
 
-  const displayPhotos = searchResults || photos;
+  // Categories come from the folder name photos were uploaded under
+  // (see AdminPage's folder upload). Only shown while browsing - face
+  // search results span the whole event regardless of category.
+  const categories = ['All', ...new Set(
+    photos.map((p) => p.photo_metadata?.category).filter(Boolean)
+  )];
+  const categorizedPhotos = activeCategory === 'All'
+    ? photos
+    : photos.filter((p) => p.photo_metadata?.category === activeCategory);
+
+  const displayPhotos = searchResults || categorizedPhotos;
   const coverImage = session?.cover_photo || (photos[0]?.file_path ?? null);
 
   // Not unlocked yet - show the access card, same as the homepage
@@ -153,6 +164,25 @@ export default function GalleryPage() {
         resultCount={searchResults ? searchResults.length : null}
         onReset={handleClearSearch}
       />
+
+      {/* Category Tabs */}
+      {!searchResults && categories.length > 2 && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                activeCategory === cat
+                  ? 'bg-primary-600 text-white shadow-glow-primary'
+                  : 'bg-primary-50 text-ink/60 hover:bg-primary-100'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Gallery Section */}
       <div>
