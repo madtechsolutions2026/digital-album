@@ -266,10 +266,10 @@ async def search_by_face(
             file_path=match["file_path"],
             embedding_id=match["embedding_id"],
             bounding_box=BoundingBox(
-                x1=match["bounding_box"]["x"],
-                y1=match["bounding_box"]["y"],
-                x2=match["bounding_box"]["x"] + match["bounding_box"]["width"],
-                y2=match["bounding_box"]["y"] + match["bounding_box"]["height"]
+                x1=match["bounding_box"]["x1"],
+                y1=match["bounding_box"]["y1"],
+                x2=match["bounding_box"]["x2"],
+                y2=match["bounding_box"]["y2"]
             ),
             confidence_score=match["confidence_score"],
             similarity_score=match["similarity_score"]

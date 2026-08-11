@@ -43,8 +43,7 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* ---------------- Hero ---------------- */}
-      <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-[#1a1025] via-[#2a1454] to-[#3b1d63]">
+      <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-[#fdf8f3] via-[#f8ebd9] to-[#dcd0c0]">
         <GradientBlobs variant="hero" />
 
         {/* subtle bokeh dot texture */}
@@ -52,25 +51,25 @@ export default function HomePage() {
           className="absolute inset-0 opacity-40 pointer-events-none"
           style={{
             backgroundImage:
-              'radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.5) 0%, transparent 60%),' +
-              'radial-gradient(2px 2px at 70% 65%, rgba(249,168,38,0.6) 0%, transparent 60%),' +
-              'radial-gradient(1.5px 1.5px at 40% 80%, rgba(255,255,255,0.4) 0%, transparent 60%),' +
-              'radial-gradient(2px 2px at 85% 20%, rgba(255,255,255,0.4) 0%, transparent 60%),' +
-              'radial-gradient(1.5px 1.5px at 55% 45%, rgba(249,168,38,0.5) 0%, transparent 60%)',
+              'radial-gradient(2px 2px at 20% 30%, rgba(30,24,19,0.15) 0%, transparent 60%),' +
+              'radial-gradient(2px 2px at 70% 65%, rgba(198,161,91,0.25) 0%, transparent 60%),' +
+              'radial-gradient(1.5px 1.5px at 40% 80%, rgba(30,24,19,0.1) 0%, transparent 60%),' +
+              'radial-gradient(2px 2px at 85% 20%, rgba(30,24,19,0.1) 0%, transparent 60%),' +
+              'radial-gradient(1.5px 1.5px at 55% 45%, rgba(198,161,91,0.2) 0%, transparent 60%)',
           }}
         />
 
         {/* vignette */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#1a1025] via-transparent to-[#1a1025]/40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#fdf8f3] via-transparent to-[#fdf8f3]/40 pointer-events-none" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-40 grid lg:grid-cols-2 gap-16 items-center">
           <div className="text-center lg:text-left">
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white/90 text-sm font-medium mb-8"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-100/60 border border-primary-200/50 text-ink/80 text-sm font-medium mb-8"
             >
-              <Sparkles className="w-4 h-4 text-gold-400" />
+              <Sparkles className="w-4 h-4 text-primary-600" />
               A Private Gallery for Every Wedding
             </motion.div>
 
@@ -78,10 +77,10 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-              className="font-display text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.08] text-balance mb-8"
+              className="font-display text-4xl md:text-5xl lg:text-6xl font-extrabold text-ink leading-[1.08] text-balance mb-8"
             >
               Every Wedding Has a Story.
-              <span className="block mt-2 bg-gradient-to-r from-gold-300 via-primary-300 to-gold-300 bg-clip-text text-transparent bg-200% animate-gradient-x">
+              <span className="block mt-2 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 bg-clip-text text-transparent bg-200% animate-gradient-x">
                 Relive Yours Beautifully.
               </span>
             </motion.h1>
@@ -90,7 +89,7 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25, duration: 0.6 }}
-              className="text-lg text-white/70 max-w-lg mx-auto lg:mx-0 text-balance"
+              className="text-lg text-ink/70 max-w-lg mx-auto lg:mx-0 text-balance"
             >
               No accounts, no public galleries. Just your Event Code and Password,
               shared privately by your photographer.
@@ -118,12 +117,12 @@ export default function HomePage() {
                 className="glass-dark rounded-2xl px-5 py-4 flex items-center gap-3 animate-float"
                 style={{ animationDelay: `${i * 0.7}s` }}
               >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/40 to-gold-500/40 flex items-center justify-center shrink-0">
-                  <stat.icon className="w-5 h-5 text-gold-300" />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/20 to-primary-600/10 flex items-center justify-center shrink-0">
+                  <stat.icon className="w-5 h-5 text-primary-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-white font-bold text-sm leading-tight">{stat.value}</p>
-                  <p className="text-white/60 text-xs leading-tight truncate">{stat.label}</p>
+                  <p className="text-ink font-bold text-sm leading-tight">{stat.value}</p>
+                  <p className="text-ink/60 text-xs leading-tight truncate">{stat.label}</p>
                 </div>
               </motion.div>
             ))}
@@ -198,7 +197,7 @@ export default function HomePage() {
           <p className="text-ink/60 text-lg mb-8 text-balance">
             Reach out and we'll help you get back into your gallery.
           </p>
-          <a href="mailto:hello@digitalalbum.app">
+          <a href="mailto:hello@shootatsight.com">
             <motion.span
               whileHover={{ scale: 1.03, y: -2 }}
               whileTap={{ scale: 0.97 }}

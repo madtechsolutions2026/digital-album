@@ -35,12 +35,14 @@ export default function Navbar() {
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-5xl glass-card rounded-full px-3 py-2.5 flex items-center justify-between"
       >
-        <Link to="/" className="flex items-center gap-2.5 pl-2 shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-600 to-gold-500 flex items-center justify-center shadow-glow-primary">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-display font-bold text-ink text-lg tracking-tight">
-            Digital Album
+        <Link to="/" className="flex flex-col items-start pl-2 shrink-0 gap-0.5">
+          <img 
+            src="https://pub-53f55a87e6f64c51862dbd0fa933eee1.r2.dev/common/logo_1.webp" 
+            alt="Shoot @ Sight" 
+            className="h-9 w-auto object-contain"
+          />
+          <span className="text-[6.5px] tracking-[0.18em] font-bold text-ink/50 uppercase leading-none font-sans select-none">
+            WEDDING PHOTOGRAPHERS & FILMMAKERS
           </span>
         </Link>
 

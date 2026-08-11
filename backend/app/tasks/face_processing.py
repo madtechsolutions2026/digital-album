@@ -131,10 +131,10 @@ async def process_faces_background(job_id: str, event_id: int) -> None:
                                 photo_id=photo.photo_id,
                                 embedding_vector=face_info.embedding.tolist(),
                                 bounding_box={
-                                    "x": int(face_info.bbox[0]),
-                                    "y": int(face_info.bbox[1]),
-                                    "width": int(face_info.bbox[2] - face_info.bbox[0]),
-                                    "height": int(face_info.bbox[3] - face_info.bbox[1])
+                                    "x1": int(face_info.bbox[0]),
+                                    "y1": int(face_info.bbox[1]),
+                                    "x2": int(face_info.bbox[2]),
+                                    "y2": int(face_info.bbox[3])
                                 },
                                 confidence_score=float(face_info.confidence)
                             )
