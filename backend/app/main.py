@@ -27,7 +27,6 @@ from app.middleware import RequestIDMiddleware
 from app.api.exception_handlers import register_exception_handlers
 from app.api.routes import photos_router, events_router, jobs_router, gallery_router
 from app.api.schemas import HealthCheckResponse, HealthCheckData
-from app.services import get_face_service
 from app.database import close_db, get_db
 
 
@@ -56,11 +55,6 @@ async def lifespan(app: FastAPI):
         # Validate settings
         settings = get_settings()
         logger.info(f"Configuration loaded: DATABASE_URL configured, DEBUG={settings.DEBUG}")
-        
-        # Initialize and load InsightFace model
-        logger.info("Loading InsightFace model...")
-        face_service = get_face_service()
-        logger.info("InsightFace model loaded successfully")
         
         # Log startup complete
         logger.info("Application startup complete")
