@@ -141,6 +141,10 @@ class Settings(BaseSettings):
         if not v:
             raise ValueError("DATABASE_URL is required and cannot be empty")
         
+        # Automatically rewrite standard postgresql scheme to use asyncpg driver (required by SQLAlchemy async engine)
+        if v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
         if "://" not in v:
             raise ValueError("DATABASE_URL must be a valid database URL with protocol")
         

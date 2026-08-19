@@ -106,48 +106,54 @@ export default function AdminPage() {
     setJobStatus(null);
     setUploadProgress({ current: 0, total: uploadFiles.length });
 
-    const BATCH_SIZE = 5;
+    const CONCURRENCY = 6;
     const newStatus = {};
     let successCount = 0;
     let errorCount = 0;
+    let nextIndex = 0;
+    let completedCount = 0;
 
-    for (let i = 0; i < uploadFiles.length; i += BATCH_SIZE) {
-      const batch = uploadFiles.slice(i, i + BATCH_SIZE);
-      
-      await Promise.all(
-        batch.map(async (file, batchIndex) => {
-          const fileIndex = i + batchIndex;
-          setUploadProgress({ current: fileIndex + 1, total: uploadFiles.length });
-          
-          newStatus[file.name] = { uploading: true };
-          setUploadStatus({ ...newStatus });
+    const uploadNext = async () => {
+      while (nextIndex < uploadFiles.length) {
+        const fileIndex = nextIndex++;
+        const file = uploadFiles[fileIndex];
+        
+        newStatus[file.name] = { uploading: true };
+        setUploadStatus({ ...newStatus });
 
-          try {
-            // Trim oversized originals client-side before upload - cuts
-            // network transfer time and server-side decode cost. Falls
-            // back to the original file if resizing fails for any reason.
-            const uploadFile = await resizeImageFile(file);
+        try {
+          // Resize and compress client-side to WebP
+          const uploadFile = await resizeImageFile(file);
 
-            const formData = new FormData();
-            formData.append('file', uploadFile);
-            formData.append('event_id', selectedEventId);
-            formData.append('skip_face_detection', 'true');
+          const formData = new FormData();
+          formData.append('file', uploadFile);
+          formData.append('event_id', selectedEventId);
+          formData.append('skip_face_detection', 'true');
 
-            const category = getFileCategory(file);
-            if (category) formData.append('category', category);
+          const category = getFileCategory(file);
+          if (category) formData.append('category', category);
 
-            const response = await photosAPI.upload(formData);
-            newStatus[file.name] = { success: true, url: response.data.data.file_path };
-            successCount++;
-          } catch (error) {
-            newStatus[file.name] = { error: true };
-            errorCount++;
-          }
-          
-          setUploadStatus({ ...newStatus });
-        })
-      );
+          const response = await photosAPI.upload(formData);
+          newStatus[file.name] = { success: true, url: response.data.data.file_path };
+          successCount++;
+        } catch (error) {
+          newStatus[file.name] = { error: true };
+          errorCount++;
+        }
+
+        completedCount++;
+        setUploadStatus({ ...newStatus });
+        setUploadProgress({ current: completedCount, total: uploadFiles.length });
+      }
+    };
+
+    // Spawn concurrent upload workers
+    const workers = [];
+    const limit = Math.min(CONCURRENCY, uploadFiles.length);
+    for (let j = 0; j < limit; j++) {
+      workers.push(uploadNext());
     }
+    await Promise.all(workers);
 
     setUploadLoading(false);
     await fetchEvents();
@@ -158,9 +164,9 @@ export default function AdminPage() {
     // own. To re-enable: uncomment this block and flip
     // FACE_DETECTION_ENABLED back to true in UploadStatusPanel.jsx.
     //
-    // if (successCount > 0) {
-    //   await handleProcessFaces(selectedEventId);
-    // }
+    if (successCount > 0) {
+      await handleProcessFaces(selectedEventId);
+    }
   };
 
   const handleProcessFaces = async (eventId) => {

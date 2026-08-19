@@ -38,7 +38,7 @@ function StepIcon({ state }) {
 // every upload). Uploads still work; face processing is just not
 // auto-triggered or shown here for now. Flip this back to true - and the
 // auto-trigger in AdminPage.jsx's handleUpload - to re-enable.
-const FACE_DETECTION_ENABLED = false;
+const FACE_DETECTION_ENABLED = true;
 
 export default function UploadStatusPanel({
   isVisible,
