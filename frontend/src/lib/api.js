@@ -30,10 +30,14 @@ export const galleryAPI = {
 };
 
 export const photosAPI = {
-  upload: (formData, onProgress) =>
+  // `signal` accepts an AbortController signal so an in-flight upload can be
+  // canceled - without it, aborting a bulk upload would still leave every
+  // already-dispatched request running to completion.
+  upload: (formData, { onProgress, signal } = {}) =>
     api.post('/api/photos/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: onProgress,
+      signal,
     }),
 
   getByEvent: (eventId) =>

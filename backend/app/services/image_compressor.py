@@ -26,7 +26,11 @@ class ImageCompressor:
     TARGET_SIZE_KB = 200
     TARGET_SIZE_BYTES = TARGET_SIZE_KB * 1024
     MIN_QUALITY = 20
-    MAX_QUALITY = 90
+    # Start the quality search at 80, not 90. A 1920px WebP at q90 lands right
+    # on the 200KB target, so detailed photos failed the first attempt and paid
+    # a second (often third) full re-encode - ~1s each - to discover what q80
+    # gives immediately. Starting here makes almost every photo a single encode.
+    MAX_QUALITY = 80
     QUALITY_STEP = 10
     MAX_DIMENSION = 1920  # Start with reasonable size
     
@@ -154,7 +158,10 @@ class ImageCompressor:
         save_kwargs = {
             'format': 'WEBP',
             'quality': quality,
-            'method': 4,  # Good compression, much faster than method=6
+            # method=2 encodes ~2x faster than method=4 for a few percent more
+            # bytes. Encode time is the upload bottleneck and we have headroom
+            # under the 200KB target, so trade size for speed.
+            'method': 2,
             'lossless': False
         }
         

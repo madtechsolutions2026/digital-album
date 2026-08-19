@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Calendar, Sparkles, Trash2, X, Copy, Check, PartyPopper, AlertTriangle } from 'lucide-react';
 
@@ -10,7 +10,7 @@ import DropZone from '../components/upload/DropZone';
 import FilePreview from '../components/upload/FilePreview';
 import UploadStatusPanel from '../components/upload/UploadStatusPanel';
 import { eventsAPI, photosAPI, jobsAPI } from '../lib/api';
-import { resizeImageFile } from '../lib/imageResize';
+import { resizeImageFile, cancelPendingResizes } from '../lib/imageResize';
 import { getFileCategory } from '../lib/fileCategory';
 
 export default function AdminPage() {
@@ -33,6 +33,13 @@ export default function AdminPage() {
   const [revealCredentials, setRevealCredentials] = useState(null);
   const [createError, setCreateError] = useState('');
   const [copiedField, setCopiedField] = useState(null);
+  const [uploadCanceled, setUploadCanceled] = useState(false);
+
+  // Cancellation needs to be readable from inside the running upload workers.
+  // State wouldn't work here - the workers close over the value from the render
+  // that started them and would never see the update.
+  const cancelRequestedRef = useRef(false);
+  const uploadAbortRef = useRef(null);
 
   useEffect(() => {
     fetchEvents();
@@ -104,7 +111,11 @@ export default function AdminPage() {
     setShowUploadPanel(true);
     setProcessingFailed(false);
     setJobStatus(null);
+    setUploadCanceled(false);
     setUploadProgress({ current: 0, total: uploadFiles.length });
+
+    cancelRequestedRef.current = false;
+    uploadAbortRef.current = new AbortController();
 
     const CONCURRENCY = 6;
     const newStatus = {};
@@ -115,15 +126,22 @@ export default function AdminPage() {
 
     const uploadNext = async () => {
       while (nextIndex < uploadFiles.length) {
+        // Checked here rather than only in the catch, so canceling stops the
+        // queue from being picked up at all instead of racing through the
+        // remaining files and marking each one failed.
+        if (cancelRequestedRef.current) return;
+
         const fileIndex = nextIndex++;
         const file = uploadFiles[fileIndex];
-        
+
         newStatus[file.name] = { uploading: true };
         setUploadStatus({ ...newStatus });
 
         try {
           // Resize and compress client-side to WebP
           const uploadFile = await resizeImageFile(file);
+
+          if (cancelRequestedRef.current) return;
 
           const formData = new FormData();
           formData.append('file', uploadFile);
@@ -133,10 +151,20 @@ export default function AdminPage() {
           const category = getFileCategory(file);
           if (category) formData.append('category', category);
 
-          const response = await photosAPI.upload(formData);
+          const response = await photosAPI.upload(formData, {
+            signal: uploadAbortRef.current?.signal,
+          });
           newStatus[file.name] = { success: true, url: response.data.data.file_path };
           successCount++;
         } catch (error) {
+          // An aborted request isn't a failure - don't count it as one, or a
+          // cancel would report a wall of red for photos that were simply
+          // never given the chance to finish.
+          if (cancelRequestedRef.current) {
+            delete newStatus[file.name];
+            setUploadStatus({ ...newStatus });
+            return;
+          }
           newStatus[file.name] = { error: true };
           errorCount++;
         }
@@ -156,7 +184,17 @@ export default function AdminPage() {
     await Promise.all(workers);
 
     setUploadLoading(false);
+    uploadAbortRef.current = null;
     await fetchEvents();
+
+    // Photos that made it up before the cancel are kept - they're already in
+    // R2 and the database, and throwing them away would mean re-uploading
+    // work that succeeded. Face processing is skipped, though: it runs over
+    // the whole event and the photographer just said stop.
+    if (cancelRequestedRef.current) {
+      setUploadCanceled(true);
+      return;
+    }
 
     // Face detection auto-trigger is temporarily disabled (memory pressure
     // on the backend - InsightFace is heavy and running it on every upload
@@ -167,6 +205,16 @@ export default function AdminPage() {
     if (successCount > 0) {
       await handleProcessFaces(selectedEventId);
     }
+  };
+
+  const handleCancelUpload = () => {
+    cancelRequestedRef.current = true;
+
+    // Abort in-flight requests, then drop the queued resize work. Without the
+    // second call the worker pool would keep chewing through photos that will
+    // never be sent.
+    uploadAbortRef.current?.abort();
+    cancelPendingResizes();
   };
 
   const handleProcessFaces = async (eventId) => {
@@ -424,12 +472,15 @@ export default function AdminPage() {
             processingFaces={processingFaces}
             processingFailed={processingFailed}
             jobStatus={jobStatus}
+            canceled={uploadCanceled}
+            onCancel={handleCancelUpload}
             onClose={() => {
               setShowUploadPanel(false);
               setUploadFiles([]);
               setUploadStatus({});
               setJobStatus(null);
               setProcessingFailed(false);
+              setUploadCanceled(false);
             }}
           />
         </div>

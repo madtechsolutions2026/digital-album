@@ -145,6 +145,74 @@ class FileStorageService:
         
         return relative_path
     
+    def save_bytes(
+        self,
+        data: bytes,
+        event_id: int,
+        event_name: str,
+        original_filename: Optional[str] = None
+    ) -> str:
+        """
+        Write already-encoded WebP bytes to disk without touching the pixels.
+
+        Local-storage counterpart of R2StorageService.save_bytes, used for the
+        passthrough path where the browser already produced a compliant file
+        (see ImageValidator.try_passthrough).
+
+        Args:
+            data: Encoded WebP bytes to store verbatim
+            event_id: ID of the event this image belongs to
+            event_name: Name of the event (used for folder name)
+            original_filename: Original filename (used for logging only)
+
+        Returns:
+            Relative path to the saved file (e.g. "john-wedding/abc123.webp")
+
+        Raises:
+            ValidationError: If saving fails
+        """
+        # Sanitize event name for folder name (lowercase, spaces to hyphens)
+        folder_name = event_name.lower().replace(' ', '-').replace('_', '-')
+        folder_name = ''.join(c for c in folder_name if c.isalnum() or c == '-')
+
+        event_dir = self.base_path / folder_name
+        self._ensure_directory_exists(event_dir)
+
+        filename = self._sanitize_filename(f"{uuid.uuid4()}.webp")
+        relative_path = f"{folder_name}/{filename}"
+
+        try:
+            with open(event_dir / filename, 'wb') as f:
+                f.write(data)
+
+            self.logger.info(
+                f"Image stored as-is: {relative_path} ({len(data) / 1024:.1f}KB, no re-encode)",
+                extra={
+                    "relative_path": relative_path,
+                    "event_id": event_id,
+                    "event_name": event_name,
+                    "folder_name": folder_name,
+                    "original_filename": original_filename,
+                    "compressed_size_kb": round(len(data) / 1024, 2),
+                    "passthrough": True
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to save image: {str(e)}",
+                exc_info=True,
+                extra={
+                    "event_id": event_id,
+                    "event_name": event_name,
+                    "filename": filename,
+                    "original_filename": original_filename
+                }
+            )
+            raise ValidationError(f"Failed to save image: {str(e)}")
+
+        return relative_path
+
     def get_full_path(self, relative_path: str) -> Path:
         """
         Convert relative path to absolute path.

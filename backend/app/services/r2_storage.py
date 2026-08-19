@@ -100,18 +100,9 @@ class R2StorageService:
         try:
             # Always use WebP for best compression
             format = "WEBP"
-            file_extension = ".webp"
-            
-            # Generate unique filename
-            filename = f"{uuid.uuid4()}{file_extension}"
-            
-            # Sanitize event name for folder name (lowercase, replace spaces with hyphens)
-            folder_name = event_name.lower().replace(' ', '-').replace('_', '-')
-            # Remove special characters
-            folder_name = ''.join(c for c in folder_name if c.isalnum() or c == '-')
-            
-            # S3 key (path) in bucket using event name as folder
-            key = f"{folder_name}/{filename}"
+
+            key = self._build_key(event_name)
+            folder_name = key.split('/')[0]
             
             # Compress image to under 50KB
             processed_image, compressed_bytes = self.compressor.compress_image(image)
@@ -165,6 +156,86 @@ class R2StorageService:
             )
             raise ValidationError(f"Failed to upload image: {str(e)}")
     
+    def save_bytes(
+        self,
+        data: bytes,
+        event_id: int,
+        event_name: str,
+        original_filename: Optional[str] = None
+    ) -> str:
+        """
+        Upload already-encoded WebP bytes to R2 without touching the pixels.
+
+        Used for the passthrough path, where the browser has already produced a
+        file that meets our size and dimension limits (see
+        ImageValidator.try_passthrough). Skips the decode/compress work that
+        save_image does.
+
+        Args:
+            data: Encoded WebP bytes to store verbatim
+            event_id: ID of the event this image belongs to
+            event_name: Name of the event (used for folder name)
+            original_filename: Original filename (used for logging only)
+
+        Returns:
+            Full public URL to the image in R2
+
+        Raises:
+            ValidationError: If the upload fails
+        """
+        try:
+            key = self._build_key(event_name)
+
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=key,
+                Body=data,
+                ContentType='image/webp',
+                CacheControl='public, max-age=31536000'  # 1 year cache
+            )
+
+            public_url = self.get_public_url(key)
+
+            self.logger.info(
+                f"Image stored as-is in R2: {key} ({len(data) / 1024:.1f}KB, no re-encode)",
+                extra={
+                    "key": key,
+                    "event_id": event_id,
+                    "event_name": event_name,
+                    "original_filename": original_filename,
+                    "compressed_size_kb": round(len(data) / 1024, 2),
+                    "passthrough": True,
+                    "public_url": public_url
+                }
+            )
+
+            return public_url
+
+        except ClientError as e:
+            self.logger.error(
+                f"Failed to upload to R2: {str(e)}",
+                exc_info=True,
+                extra={"event_id": event_id, "event_name": event_name}
+            )
+            raise ValidationError(f"Failed to upload image: {str(e)}")
+
+    def _build_key(self, event_name: str) -> str:
+        """
+        Build the object key (folder + unique filename) for an event's image.
+
+        Args:
+            event_name: Name of the event, used as the folder
+
+        Returns:
+            Object key, e.g. "john-wedding/1f3c....webp"
+        """
+        # Sanitize event name for folder name (lowercase, spaces to hyphens)
+        folder_name = event_name.lower().replace(' ', '-').replace('_', '-')
+        # Remove special characters
+        folder_name = ''.join(c for c in folder_name if c.isalnum() or c == '-')
+
+        return f"{folder_name}/{uuid.uuid4()}.webp"
+
     def get_public_url(self, key: str) -> str:
         """
         Get public URL for an object in R2.

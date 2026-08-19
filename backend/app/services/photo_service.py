@@ -174,43 +174,90 @@ class PhotoService:
         # semaphore so a large concurrent batch queues cleanly instead of
         # running unbounded decode+compress work in parallel.
         async with _get_upload_semaphore():
-            # Step 2: Validate and prepare image. CPU-bound (PIL decode/resize),
-            # so run it off the event loop thread to allow concurrent uploads.
-            image, format_str, original_size = await asyncio.to_thread(
-                self.image_validator.validate_and_prepare, file_content, filename
-            )
-
-            self.logger.info(
-                f"Image validated: format={format_str}, size={original_size}",
-                extra={
-                    "uploaded_filename": filename,
-                    "format": format_str,
-                    "original_size": original_size,
-                    "final_size": image.size
-                }
-            )
-
-            # Step 3: Save image to disk or R2. Compression (CPU-bound) and the
-            # storage upload (blocking network I/O) both happen inside these
-            # sync calls, so run them off the event loop thread too.
-            if self.settings.STORAGE_TYPE == 'r2' and self.r2_storage:
-                relative_path = await asyncio.to_thread(
-                    self.r2_storage.save_image,
-                    image=image,
-                    event_id=event_id,
-                    event_name=event.name,
-                    format=format_str,
-                    original_filename=filename
+            # Fast path: the browser already downscaled and WebP-encoded this
+            # file before sending it, so if it meets our limits there is nothing
+            # left to do - decoding it just to re-encode an identical file was
+            # ~2s of CPU per photo, by far the biggest cost of a bulk upload.
+            #
+            # Only available when face detection is skipped, since detection
+            # needs the decoded pixels. That is exactly the bulk-folder-upload
+            # case, which is the one that needs the speed.
+            passthrough_size = None
+            if skip_face_detection:
+                passthrough_size = await asyncio.to_thread(
+                    self.image_validator.try_passthrough, file_content
                 )
+
+            if passthrough_size is not None:
+                image = None
+                format_str = "WEBP"
+                original_size = passthrough_size
+                stored_size = passthrough_size
+
+                self.logger.info(
+                    f"Storing upload as-is: {original_size[0]}x{original_size[1]} WebP",
+                    extra={
+                        "uploaded_filename": filename,
+                        "original_size": original_size,
+                        "passthrough": True
+                    }
+                )
+
+                if self.settings.STORAGE_TYPE == 'r2' and self.r2_storage:
+                    relative_path = await asyncio.to_thread(
+                        self.r2_storage.save_bytes,
+                        data=file_content,
+                        event_id=event_id,
+                        event_name=event.name,
+                        original_filename=filename
+                    )
+                else:
+                    relative_path = await asyncio.to_thread(
+                        self.file_storage.save_bytes,
+                        data=file_content,
+                        event_id=event_id,
+                        event_name=event.name,
+                        original_filename=filename
+                    )
             else:
-                relative_path = await asyncio.to_thread(
-                    self.file_storage.save_image,
-                    image=image,
-                    event_id=event_id,
-                    event_name=event.name,
-                    format=format_str,
-                    original_filename=filename
+                # Step 2: Validate and prepare image. CPU-bound (PIL decode/resize),
+                # so run it off the event loop thread to allow concurrent uploads.
+                image, format_str, original_size = await asyncio.to_thread(
+                    self.image_validator.validate_and_prepare, file_content, filename
                 )
+                stored_size = image.size
+
+                self.logger.info(
+                    f"Image validated: format={format_str}, size={original_size}",
+                    extra={
+                        "uploaded_filename": filename,
+                        "format": format_str,
+                        "original_size": original_size,
+                        "final_size": image.size
+                    }
+                )
+
+                # Step 3: Save image to disk or R2. Compression (CPU-bound) and the
+                # storage upload (blocking network I/O) both happen inside these
+                # sync calls, so run them off the event loop thread too.
+                if self.settings.STORAGE_TYPE == 'r2' and self.r2_storage:
+                    relative_path = await asyncio.to_thread(
+                        self.r2_storage.save_image,
+                        image=image,
+                        event_id=event_id,
+                        event_name=event.name,
+                        format=format_str,
+                        original_filename=filename
+                    )
+                else:
+                    relative_path = await asyncio.to_thread(
+                        self.file_storage.save_image,
+                        image=image,
+                        event_id=event_id,
+                        event_name=event.name,
+                        format=format_str,
+                        original_filename=filename
+                    )
         
         # Prepare metadata for database
         metadata = {
@@ -221,8 +268,8 @@ class PhotoService:
                 "height": original_size[1]
             },
             "stored_size": {
-                "width": image.size[0],
-                "height": image.size[1]
+                "width": stored_size[0],
+                "height": stored_size[1]
             },
             "file_size_bytes": len(file_content),
             "category": category

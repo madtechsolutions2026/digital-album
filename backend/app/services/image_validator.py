@@ -17,6 +17,7 @@ from PIL import Image
 
 from app.config import get_settings
 from app.exceptions import ValidationError
+from app.services.image_compressor import ImageCompressor
 
 
 class ImageValidator:
@@ -163,6 +164,60 @@ class ImageValidator:
         
         return image, format_str, original_size
     
+    def try_passthrough(self, file_content: bytes) -> Optional[Tuple[int, int]]:
+        """
+        Check whether an upload is already exactly what we would have produced,
+        so it can go straight to storage without a decode/re-encode round trip.
+
+        The browser already downscales and converts to WebP before uploading
+        (see frontend lib/imageResize.js). When that succeeded, re-decoding and
+        re-compressing it server-side reproduces a file we already have - which
+        was the single largest cost in an upload (~2s of CPU per photo).
+
+        Only the header is read here; the pixel data is never decoded, so this
+        costs microseconds rather than seconds.
+
+        Returns:
+            (width, height) if the payload can be stored as-is, else None.
+            None simply means "take the normal compress path" - it is not an
+            error, and callers must always keep that fallback, because
+            resizeImageFile() gives up and sends the untouched original
+            whenever the browser cannot decode an image.
+        """
+        # Never trust the client's declared type - sniff the real magic bytes.
+        file_type = filetype.guess(file_content)
+        if file_type is None or file_type.mime != "image/webp":
+            return None
+
+        # Must already be under what the compressor would target, otherwise
+        # we would be storing something bigger than our own pipeline allows.
+        if len(file_content) > ImageCompressor.TARGET_SIZE_BYTES:
+            return None
+
+        # Read dimensions from the header only - Image.open() is lazy and does
+        # not touch pixel data until .load() is called, which we deliberately
+        # never do on this path.
+        try:
+            with Image.open(io.BytesIO(file_content)) as image:
+                width, height = image.size
+        except Exception:
+            # Malformed header - fall back to the full validate path, which
+            # will produce a proper ValidationError for the client.
+            return None
+
+        if width < 1 or height < 1:
+            return None
+
+        if max(width, height) > ImageCompressor.MAX_DIMENSION:
+            return None
+
+        self.logger.debug(
+            f"Upload accepted as-is: {width}x{height} WebP, "
+            f"{len(file_content) / 1024:.1f}KB (no server re-encode)"
+        )
+
+        return (width, height)
+
     def _resize_to_max_dimension(
         self,
         image: Image.Image,

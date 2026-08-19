@@ -49,6 +49,8 @@ export default function UploadStatusPanel({
   processingFaces,
   processingFailed,
   jobStatus,
+  canceled = false,
+  onCancel,
   onClose,
 }) {
   if (!isVisible) return null;
@@ -56,7 +58,13 @@ export default function UploadStatusPanel({
   const uploadTotal = uploadProgress.total || 0;
   const uploadCurrent = uploadProgress.current || 0;
   const uploadComplete = uploadTotal > 0 && uploadCurrent === uploadTotal && !uploading;
-  const uploadState = uploading ? 'active' : uploadComplete ? 'done' : 'pending';
+  const uploadState = canceled
+    ? 'error'
+    : uploading
+    ? 'active'
+    : uploadComplete
+    ? 'done'
+    : 'pending';
 
   const faceTotal = jobStatus?.total || 0;
   const faceCurrent = jobStatus?.current || 0;
@@ -70,7 +78,11 @@ export default function UploadStatusPanel({
     ? 'done'
     : 'pending';
 
-  const allDone = FACE_DETECTION_ENABLED
+  // A canceled run is finished too - the panel must be closeable, otherwise
+  // cancel would leave the photographer stuck with a panel they can't dismiss.
+  const allDone = canceled
+    ? !uploading
+    : FACE_DETECTION_ENABLED
     ? uploadComplete && (faceComplete || processingFailed)
     : uploadComplete;
 
@@ -92,9 +104,32 @@ export default function UploadStatusPanel({
             </button>
           )}
 
-          <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-5">
-            {allDone ? 'Upload complete' : 'Uploading & processing photos'}
-          </h4>
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              {canceled
+                ? 'Upload canceled'
+                : allDone
+                ? 'Upload complete'
+                : 'Uploading & processing photos'}
+            </h4>
+
+            {uploading && onCancel && (
+              <button
+                onClick={onCancel}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+              >
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+            )}
+          </div>
+
+          {canceled && (
+            <p className="text-sm text-slate-600 dark:text-slate-400 -mt-2 mb-5">
+              Stopped at {uploadCurrent} of {uploadTotal}. Photos already
+              uploaded were kept.
+            </p>
+          )}
 
           <div className="space-y-6">
             {/* Step 1: Upload */}
@@ -122,8 +157,9 @@ export default function UploadStatusPanel({
               </div>
             </div>
 
-            {/* Step 2: Face processing - hidden while FACE_DETECTION_ENABLED is false */}
-            {FACE_DETECTION_ENABLED && (
+            {/* Step 2: Face processing - hidden while FACE_DETECTION_ENABLED is
+                false, and after a cancel, where it never runs */}
+            {FACE_DETECTION_ENABLED && !canceled && (
               <div className="flex gap-4">
                 <StepIcon state={faceState} />
                 <div className="flex-1">
