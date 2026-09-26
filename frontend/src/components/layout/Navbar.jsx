@@ -36,13 +36,13 @@ export default function Navbar() {
         className="w-full max-w-5xl glass-card rounded-full px-3 py-2.5 flex items-center justify-between"
       >
         <Link to="/" className="flex flex-col items-start pl-2 shrink-0 gap-0.5">
-          <img 
-            src="https://pub-53f55a87e6f64c51862dbd0fa933eee1.r2.dev/common/logo_1.webp" 
-            alt="Shoot @ Sight" 
+          <img
+            src="/logo.png"
+            alt="Mad Tech Solutions"
             className="h-9 w-auto object-contain"
           />
           <span className="text-[6.5px] tracking-[0.18em] font-bold text-ink/50 uppercase leading-none font-sans select-none">
-            WEDDING PHOTOGRAPHERS & FILMMAKERS
+            MAKE ANYTHING DIGITAL
           </span>
         </Link>
 

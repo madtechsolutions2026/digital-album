@@ -43,7 +43,7 @@ export default function HomePage() {
 
   return (
     <div>
-      <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-[#fdf8f3] via-[#f8ebd9] to-[#dcd0c0]">
+      <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-[#f6f9fd] via-[#dce8fb] to-[#c3d6f0]">
         <GradientBlobs variant="hero" />
 
         {/* subtle bokeh dot texture */}
@@ -51,16 +51,16 @@ export default function HomePage() {
           className="absolute inset-0 opacity-40 pointer-events-none"
           style={{
             backgroundImage:
-              'radial-gradient(2px 2px at 20% 30%, rgba(30,24,19,0.15) 0%, transparent 60%),' +
-              'radial-gradient(2px 2px at 70% 65%, rgba(198,161,91,0.25) 0%, transparent 60%),' +
-              'radial-gradient(1.5px 1.5px at 40% 80%, rgba(30,24,19,0.1) 0%, transparent 60%),' +
-              'radial-gradient(2px 2px at 85% 20%, rgba(30,24,19,0.1) 0%, transparent 60%),' +
-              'radial-gradient(1.5px 1.5px at 55% 45%, rgba(198,161,91,0.2) 0%, transparent 60%)',
+              'radial-gradient(2px 2px at 20% 30%, rgba(16,26,46,0.15) 0%, transparent 60%),' +
+              'radial-gradient(2px 2px at 70% 65%, rgba(47,111,237,0.25) 0%, transparent 60%),' +
+              'radial-gradient(1.5px 1.5px at 40% 80%, rgba(16,26,46,0.1) 0%, transparent 60%),' +
+              'radial-gradient(2px 2px at 85% 20%, rgba(16,26,46,0.1) 0%, transparent 60%),' +
+              'radial-gradient(1.5px 1.5px at 55% 45%, rgba(47,111,237,0.2) 0%, transparent 60%)',
           }}
         />
 
         {/* vignette */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#fdf8f3] via-transparent to-[#fdf8f3]/40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#f6f9fd] via-transparent to-[#f6f9fd]/40 pointer-events-none" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-40 grid lg:grid-cols-2 gap-16 items-center">
           <div className="text-center lg:text-left">
@@ -197,7 +197,7 @@ export default function HomePage() {
           <p className="text-ink/60 text-lg mb-8 text-balance">
             Reach out and we'll help you get back into your gallery.
           </p>
-          <a href="mailto:hello@shootatsight.com">
+          <a href="mailto:hello@madtechsolutions.in">
             <motion.span
               whileHover={{ scale: 1.03, y: -2 }}
               whileTap={{ scale: 0.97 }}
