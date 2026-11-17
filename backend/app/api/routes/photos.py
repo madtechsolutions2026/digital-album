@@ -195,7 +195,9 @@ async def upload_photo(
     3. Search all photos in the event for similar faces
     4. Return matching photos ordered by similarity
     
-    If multiple faces are detected in the selfie, the largest face is used.
+    If multiple faces are detected in the selfie, the highest-quality primary
+    face is used when it is clearly larger; ambiguous group selfies are
+    rejected so results are not attributed to the wrong person.
     
     Supported formats: JPEG, PNG, WEBP
     Maximum file size: 10MB
@@ -204,7 +206,7 @@ async def upload_photo(
 async def search_by_face(
     selfie: Annotated[UploadFile, File(description="Selfie image to search for")],
     event_id: Annotated[int, Form(description="ID of the event to search in")],
-    threshold: Annotated[float, Form(description="Minimum similarity threshold (0.0 to 1.0)", ge=0.0, le=1.0)] = 0.6,
+    threshold: Annotated[Optional[float], Form(description="Minimum similarity threshold (0.0 to 1.0)", ge=0.0, le=1.0)] = None,
     photo_service: PhotoService = Depends(get_photo_service),
     db: AsyncSession = Depends(get_db),
     authorization: Annotated[Optional[str], Header()] = None
@@ -215,7 +217,7 @@ async def search_by_face(
     Args:
         selfie: Uploaded selfie image
         event_id: ID of the event to search in
-        threshold: Minimum similarity threshold (default: 0.6)
+        threshold: Minimum similarity threshold (defaults to DEFAULT_SIMILARITY_THRESHOLD)
         photo_service: Photo service (injected)
         db: Database session (injected)
         authorization: Bearer gallery session token, scoped to event_id
@@ -231,13 +233,18 @@ async def search_by_face(
         DatabaseError: If database operation fails (503)
     """
     verify_gallery_access(authorization, event_id)
+    from app.config import get_settings
+    threshold_value = (
+        get_settings().DEFAULT_SIMILARITY_THRESHOLD
+        if threshold is None else threshold
+    )
 
     logger.info(
-        f"Face search request: filename={selfie.filename}, event_id={event_id}, threshold={threshold}",
+        f"Face search request: filename={selfie.filename}, event_id={event_id}, threshold={threshold_value}",
         extra={
             "uploaded_filename": selfie.filename,
             "event_id": event_id,
-            "threshold": threshold
+            "threshold": threshold_value
         }
     )
     
@@ -260,7 +267,7 @@ async def search_by_face(
         selfie_content=selfie_content,
         selfie_filename=selfie.filename or "selfie",
         event_id=event_id,
-        threshold=threshold
+        threshold=threshold_value
     )
     
     # Convert matches to response format

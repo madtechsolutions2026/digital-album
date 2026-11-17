@@ -77,6 +77,51 @@ class Settings(BaseSettings):
         description="Images larger than this dimension will be resized before face detection"
     )
 
+    # Face recognition configuration.  Keep the model name explicit because
+    # InsightFace model packs are not interchangeable even when they emit the
+    # same 512-dimensional vector shape.  The default matches the embeddings
+    # already produced by this project; switching packs should be accompanied
+    # by a full re-index of stored faces.
+    INSIGHTFACE_MODEL: str = Field(
+        default="buffalo_s",
+        description="InsightFace model pack (buffalo_s or buffalo_l)"
+    )
+
+    FACE_DETECTION_SIZE: int = Field(
+        default=640,
+        description="Square detector input size in pixels"
+    )
+
+    FACE_MIN_DETECTION_CONFIDENCE: float = Field(
+        default=0.50,
+        description="Minimum detector confidence for a face to be indexed"
+    )
+
+    FACE_MIN_SIZE: int = Field(
+        default=24,
+        description="Minimum face width and height in the prepared image"
+    )
+
+    SELFIE_MIN_FACE_SIZE: int = Field(
+        default=80,
+        description="Minimum face width and height accepted for a search selfie"
+    )
+
+    SELFIE_MAX_COMPETING_FACE_RATIO: float = Field(
+        default=0.70,
+        description="Reject a selfie when the second face is at least this fraction of the primary face area"
+    )
+
+    DEFAULT_SIMILARITY_THRESHOLD: float = Field(
+        default=0.60,
+        description="Default cosine similarity threshold for face search"
+    )
+
+    MAX_SEARCH_RESULTS: int = Field(
+        default=100,
+        description="Maximum number of unique photos returned by face search"
+    )
+
     MAX_CONCURRENT_UPLOADS: int = Field(
         default=8,
         description=(
@@ -235,6 +280,44 @@ class Settings(BaseSettings):
         if v <= 0:
             raise ValueError("RESIZE_THRESHOLD must be a positive integer")
 
+        return v
+
+    @field_validator("INSIGHTFACE_MODEL")
+    @classmethod
+    def validate_insightface_model(cls, v: str, info: ValidationInfo) -> str:
+        """Validate the model pack instead of accepting an arbitrary path."""
+        model = v.strip().lower()
+        valid_models = {"buffalo_s", "buffalo_l"}
+        if model not in valid_models:
+            raise ValueError(f"INSIGHTFACE_MODEL must be one of {sorted(valid_models)}")
+        return model
+
+    @field_validator("FACE_DETECTION_SIZE")
+    @classmethod
+    def validate_face_detection_size(cls, v: int, info: ValidationInfo) -> int:
+        """Detector input must be a practical multiple of the model stride."""
+        if v < 320 or v > 2048 or v % 32 != 0:
+            raise ValueError("FACE_DETECTION_SIZE must be a multiple of 32 between 320 and 2048")
+        return v
+
+    @field_validator(
+        "FACE_MIN_DETECTION_CONFIDENCE",
+        "DEFAULT_SIMILARITY_THRESHOLD",
+        "SELFIE_MAX_COMPETING_FACE_RATIO",
+    )
+    @classmethod
+    def validate_face_scores(cls, v: float, info: ValidationInfo) -> float:
+        """Keep score thresholds within the range exposed by the API."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"{info.field_name} must be between 0.0 and 1.0")
+        return v
+
+    @field_validator("FACE_MIN_SIZE", "SELFIE_MIN_FACE_SIZE", "MAX_SEARCH_RESULTS")
+    @classmethod
+    def validate_face_limits(cls, v: int, info: ValidationInfo) -> int:
+        """Reject zero/negative quality and result limits early."""
+        if v <= 0:
+            raise ValueError(f"{info.field_name} must be a positive integer")
         return v
 
     @field_validator("MAX_CONCURRENT_UPLOADS")

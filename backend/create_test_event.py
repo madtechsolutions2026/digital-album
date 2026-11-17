@@ -29,7 +29,7 @@ async def create_test_event():
     
     test_events = [
         {
-            "name": "Demo Wedding",
+            "name": "Arun & Pavithra's Wedding",
             "access_code": "ARUN26",
             "password": "wedding2026",
             "date": datetime(2026, 8, 15, 11, 0, 0)

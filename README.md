@@ -1,4 +1,4 @@
-# 💒 AI Wedding Photo Portal
+# DG Album
 
 AI-powered wedding photo gallery with face recognition search. Photographers upload wedding photos, guests find themselves using a selfie.
 
@@ -62,34 +62,35 @@ npm run dev
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
+- **Photographer Studio**: http://localhost:3000/admin (studio sign-in required)
+- **Guest Gallery**: http://localhost:3000 (event code and password required)
 
 ## 📖 Usage
 
 ### 1. Upload Photos (Photographer)
-1. Navigate to http://localhost:3000/admin
-2. Enter Event ID (default: 1)
+1. Sign in to http://localhost:3000/admin
+2. Create an event
 3. Select multiple photos or folder
 4. Click "Upload & Detect Faces"
 5. Watch progress and results
 
 ### 2. Find Yourself (Guest)
-1. Navigate to http://localhost:3000/gallery
-2. Browse all wedding photos
-3. Upload your selfie
+1. Open http://localhost:3000
+2. Enter the event code and password shared by the photographer
+3. Upload your selfie from the unlocked gallery
 4. Adjust similarity (0.3 = more results, 0.9 = strict)
-5. Click "Find Me"
-6. View only photos with your face
+5. View photos that match your face
 
 ## 🏗️ Architecture
 
 ### Tech Stack
 - **Backend**: FastAPI (Python)
 - **Database**: PostgreSQL + pgvector
-- **AI**: InsightFace (SCRFD + ArcFace)
+- **AI**: InsightFace (SCRFD + ArcFace; `buffalo_s` by default, configurable via `INSIGHTFACE_MODEL`)
 - **Frontend**: React + Vite
 - **Storage**: Local filesystem or Cloudflare R2 (configurable via `STORAGE_TYPE`)
 
-See [TECH_STACK.md](./TECH_STACK.md) for the current component overview, Railway variables, and production deployment checklist.
+See [TECH_STACK.md](./TECH_STACK.md) for the component overview, public and photographer access flows, and Railway production configuration.
 
 ### Project Structure
 ```
@@ -154,15 +155,15 @@ Event (1) ─→ (N) Photos (1) ─→ (N) FaceEmbeddings
 
 1. **Upload**: Photographer uploads wedding photos
 2. **Detection**: SCRFD detects all faces in each photo
-3. **Embedding**: ArcFace generates 512-dim vector per face
+3. **Embedding**: ArcFace generates a normalized 512-dim vector per face
 4. **Storage**: Vectors stored in PostgreSQL pgvector column
 5. **Search**: Guest uploads selfie → same pipeline → 1 vector
-6. **Matching**: Cosine similarity query finds similar faces
+6. **Matching**: Cosine similarity query finds similar faces (one best match per photo)
 7. **Results**: Matching photos returned, sorted by similarity
 
 ## 🚀 Deployment
 
-The project is deployed on Railway. Configure the backend and frontend as separate services; Railway deployment variables and health checks are documented in [TECH_STACK.md](./TECH_STACK.md). Production image storage should use Cloudflare R2 because Railway's local filesystem is ephemeral.
+DG Album is served as a full product on Railway. The public homepage and event-code entry are open. Photographer event management requires a studio sign-in, and guest photo access requires the event's code and password. See [PRODUCTION_DEPLOYMENT.md](./PRODUCTION_DEPLOYMENT.md) for service configuration.
 
 ## 📝 Development Status
 
@@ -177,11 +178,9 @@ The project is deployed on Railway. Configure the backend and frontend as separa
 - [x] Lightbox viewer
 
 ### 🔜 Coming Soon
-- [ ] Background processing
-- [ ] Image compression
-- [ ] Cloud storage
-- [ ] Event management UI
-- [ ] Authentication
+- [ ] Queued face processing that survives service restarts
+- [ ] Photographer accounts with individual roles
+- [ ] Rate limiting and operational monitoring
 - [ ] Batch download
 - [ ] Social sharing
 

@@ -13,21 +13,25 @@ This module initializes and configures the FastAPI application with:
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.logging_config import setup_logging
 from app.middleware import RequestIDMiddleware
+from app.middleware.photographer_access import PhotographerAccessMiddleware
 from app.api.exception_handlers import register_exception_handlers
 from app.api.routes import photos_router, events_router, jobs_router, gallery_router
 from app.api.schemas import HealthCheckResponse, HealthCheckData
 from app.database import close_db, get_db
+from app.models.photo import Photo
+from app.services.auth import decode_gallery_token
 
 
 # Initialize logging
@@ -112,15 +116,26 @@ def create_app() -> FastAPI:
         * `POST /api/photos/search` - Search for photos by face similarity
         * `GET /health` - Health check endpoint
         
-        ## Authentication
-        
-        This version does not include authentication. Authentication should be added
-        before deploying to production.
+        ## Access
+
+        Public product pages are available to everyone. Photographer event management
+        requires a studio sign-in, and each guest gallery requires its event code and
+        password.
         """,
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan
+    )
+
+    # Keep compatibility with the existing Railway credentials while the
+    # photographer studio credentials are migrated to their product names.
+    studio_username = os.environ.get("ADMIN_USERNAME") or os.environ.get("DEMO_USERNAME") or "photographer"
+    studio_password = os.environ.get("ADMIN_PASSWORD") or os.environ.get("DEMO_PASSWORD", "")
+    app.add_middleware(
+        PhotographerAccessMiddleware,
+        username=studio_username,
+        password=studio_password,
     )
     
     # Configure CORS
@@ -157,9 +172,32 @@ def create_app() -> FastAPI:
     storage_path = settings.STORAGE_PATH
     if not os.path.isabs(storage_path):
         storage_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), storage_path)
-    os.makedirs(storage_path, exist_ok=True)
-    app.mount("/storage", StaticFiles(directory=storage_path), name="storage")
-    logger.info(f"Static files mounted at /storage from {storage_path}")
+    storage_root = Path(storage_path).resolve()
+    storage_root.mkdir(parents=True, exist_ok=True)
+
+    @app.get("/storage/{relative_path:path}", include_in_schema=False)
+    async def serve_private_photo(
+        relative_path: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ):
+        # Local photo URLs are only served to a browser holding a valid event
+        # session cookie. The API's JSON endpoints continue to use Bearer tokens.
+        event_id = decode_gallery_token(request.cookies.get("dg_gallery_access", ""))
+        if event_id is None:
+            raise HTTPException(status_code=401, detail="Unlock this gallery to view its photos.")
+
+        result = await db.execute(select(Photo.event_id).where(Photo.file_path == relative_path))
+        photo_event_id = result.scalar_one_or_none()
+        if photo_event_id is None or photo_event_id != event_id:
+            raise HTTPException(status_code=404, detail="Photo not found.")
+
+        photo_path = (storage_root / relative_path).resolve()
+        if not photo_path.is_relative_to(storage_root) or not photo_path.is_file():
+            raise HTTPException(status_code=404, detail="Photo not found.")
+        return FileResponse(photo_path)
+
+    logger.info(f"Private photo files served from {storage_root}")
     
     # Add health check endpoint at root level
     @app.get(
@@ -216,6 +254,10 @@ async def root():
     Returns:
         Dictionary with API name, version, and documentation links
     """
+    frontend = os.environ.get("FRONTEND_DIST")
+    if frontend:
+        from starlette.responses import FileResponse
+        return FileResponse(os.path.join(frontend, "index.html"))
     return {
         "name": "AI Wedding Photo Portal API",
         "version": "1.0.0",
@@ -224,6 +266,26 @@ async def root():
         "redoc_url": "/redoc",
         "health_check": "/health"
     }
+
+
+if os.environ.get("FRONTEND_DIST"):
+    from pathlib import Path
+    from starlette.responses import FileResponse
+    from fastapi import HTTPException
+
+    @app.get("/{frontend_path:path}", include_in_schema=False)
+    async def frontend_page(frontend_path: str):
+        if frontend_path.startswith(("api/", "storage/")):
+            raise HTTPException(404)
+        base = Path(os.environ["FRONTEND_DIST"]).resolve()
+        target = (base / frontend_path).resolve()
+        if not target.is_relative_to(base):
+            raise HTTPException(404)
+        if target.is_file():
+            return FileResponse(target)
+        if frontend_path in {"admin", "gallery"}:
+            return FileResponse(base / "index.html")
+        raise HTTPException(404)
 
 
 if __name__ == "__main__":

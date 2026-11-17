@@ -1,18 +1,55 @@
 import axios from 'axios';
 import { getGallerySession } from './gallerySession';
 
-// Vite embeds VITE_API_URL into the production bundle at build time. Keep the
-// localhost fallback for local development only; a deployed browser must never
-// try to reach the visitor's own machine.
-const API_BASE_URL = import.meta.env.VITE_API_URL || (
-  import.meta.env.DEV ? 'http://localhost:8000' : ''
-);
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// R2 returns absolute URLs; local photo storage returns paths relative to its
+// configured photo directory. Resolve those through the API's protected route.
+export function mediaUrl(value) {
+  if (!value || /^(https?:|data:|blob:)/i.test(value)) return value;
+  const relative = value.replace(/^\/+/, '').replace(/^storage\//, '');
+  return `${API_BASE_URL}/storage/${relative}`;
+}
+
+function resolveMedia(data) {
+  if (!data || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(resolveMedia);
+  for (const [key, value] of Object.entries(data)) {
+    if ((key === 'file_path' || key === 'cover_photo') && typeof value === 'string') {
+      data[key] = mediaUrl(value);
+    } else if (value && typeof value === 'object') {
+      data[key] = resolveMedia(value);
+    }
+  }
+  return data;
+}
+
+api.interceptors.response.use(response => {
+  response.data = resolveMedia(response.data);
+  return response;
+}, error => {
+  const requestPath = error.config?.url
+    ? new URL(error.config.url, window.location.origin).pathname
+    : '';
+  const photographerApi = requestPath === '/api/events'
+    || requestPath.startsWith('/api/events/')
+    || requestPath === '/api/photos/upload'
+    || requestPath.startsWith('/api/jobs/');
+
+  // BrowserRouter can navigate to /admin without a full page request. If its
+  // first studio API call is rejected, send the photographer to the server-side
+  // sign-in page instead of leaving the admin screen in an error state.
+  if (error.response?.status === 401 && photographerApi) {
+    window.location.assign('/admin/login');
+  }
+  return Promise.reject(error);
 });
 
 function galleryAuthHeader() {
@@ -50,10 +87,14 @@ export const photosAPI = {
       headers: galleryAuthHeader(),
     }),
 
-  searchByFace: (formData, eventId, threshold = 0.6) => {
-    // Backend expects event_id and threshold as form data, not query params
+  searchByFace: (formData, eventId, threshold = null) => {
+    // Backend expects event_id and threshold as form data, not query params.
+    // Leave threshold unset by default so the backend's configured default is
+    // used consistently across clients.
     formData.append('event_id', eventId);
-    formData.append('threshold', threshold);
+    if (threshold !== null && threshold !== undefined) {
+      formData.append('threshold', threshold);
+    }
     return api.post('/api/photos/search', formData, {
       headers: { 'Content-Type': 'multipart/form-data', ...galleryAuthHeader() },
     });

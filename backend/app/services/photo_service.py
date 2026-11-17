@@ -285,6 +285,7 @@ class PhotoService:
         # Step 5: Detect faces and extract embeddings (optional)
         warning = None
         faces_stored = 0
+        faces: List[FaceInfo] = []
         
         if skip_face_detection:
             # Skip face detection for faster upload
@@ -343,7 +344,7 @@ class PhotoService:
         result = PhotoUploadResult(
             photo_id=photo.photo_id,
             file_path=relative_path,
-            face_count=len(faces) if 'faces' in locals() else 0,
+            face_count=len(faces),
             faces_stored=faces_stored,
             warning=warning
         )
@@ -387,7 +388,8 @@ class PhotoService:
         # Store in database
         embeddings = await self.photo_repo.create_face_embeddings(
             photo_id=photo_id,
-            faces=face_data
+            faces=face_data,
+            model_name=self.settings.INSIGHTFACE_MODEL,
         )
         
         return len(embeddings)
@@ -406,7 +408,7 @@ class PhotoService:
         1. Verify event exists
         2. Validate selfie image
         3. Detect face in selfie
-        4. Select largest face (primary face)
+        4. Select the highest-quality primary face
         5. Search for similar faces in event photos
         
         Args:
@@ -438,9 +440,15 @@ class PhotoService:
         # Step 1: Verify event exists
         await self.photo_repo.verify_event_exists(event_id)
         
-        # Step 2: Validate selfie image
-        image, _, _ = self.image_validator.validate_and_prepare(
-            selfie_content, selfie_filename
+        if not 0.0 <= threshold <= 1.0:
+            raise ValidationError("Similarity threshold must be between 0.0 and 1.0")
+
+        # Step 2: Validate selfie image.  PIL decoding/resizing is CPU-bound;
+        # keep it off the event loop just like face inference itself.
+        image, _, _ = await asyncio.to_thread(
+            self.image_validator.validate_and_prepare,
+            selfie_content,
+            selfie_filename,
         )
         
         # Step 3: Detect faces in selfie
@@ -451,12 +459,39 @@ class PhotoService:
                 "No face detected in selfie. Please upload a clear photo with a visible face."
             )
         
-        # Step 4: Select largest face (primary face in selfie)
+        # Step 4: Select the highest-quality primary face and reject ambiguous
+        # group selfies before querying the gallery.
         primary_face = self.face_service.select_largest_face(faces)
+
+        if primary_face is None:
+            # This should only be possible if a custom face service returns an
+            # unexpected empty list, but keep the API contract explicit.
+            raise ValidationError(
+                "No usable face detected in selfie. Please upload a clear photo with a visible face."
+            )
+
+        face_width = primary_face.bbox[2] - primary_face.bbox[0]
+        face_height = primary_face.bbox[3] - primary_face.bbox[1]
+        if min(face_width, face_height) < self.settings.SELFIE_MIN_FACE_SIZE:
+            raise ValidationError(
+                "The face in your selfie is too small. Please move closer and try again."
+            )
         
         if len(faces) > 1:
+            competing_face = max(
+                (face for face in faces if face is not primary_face),
+                key=lambda face: face.bbox_area(),
+            )
+            if (
+                primary_face.bbox_area() > 0
+                and competing_face.bbox_area()
+                >= primary_face.bbox_area() * self.settings.SELFIE_MAX_COMPETING_FACE_RATIO
+            ):
+                raise ValidationError(
+                    "Please upload a selfie with one clearly visible face."
+                )
             self.logger.info(
-                f"Multiple faces detected ({len(faces)}), using largest face",
+                f"Multiple faces detected ({len(faces)}), using highest-quality primary face",
                 extra={
                     "num_faces": len(faces),
                     "selfie_filename": selfie_filename
@@ -468,7 +503,9 @@ class PhotoService:
             event_id=event_id,
             query_embedding=primary_face.embedding,
             threshold=threshold,
-            limit=100
+            limit=self.settings.MAX_SEARCH_RESULTS,
+            min_confidence=self.settings.FACE_MIN_DETECTION_CONFIDENCE,
+            model_name=self.settings.INSIGHTFACE_MODEL,
         )
         
         result = {

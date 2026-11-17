@@ -33,18 +33,18 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #9dc4fb, #2f6fed);
+    background: linear-gradient(180deg, #ebd4a7, #C6A15B);
     border-radius: 999px;
-    border: 2px solid #f6f9fd;
+    border: 2px solid #fdf8f3;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #5c9bf7, #2457c9);
+    background: linear-gradient(180deg, #dbbc7c, #b38e4a);
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2f6fed transparent;
+    scrollbar-color: #C6A15B transparent;
   }
 }
 
