@@ -1,0 +1,9 @@
+.git
+.deploy-tools
+**/.env
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/dist
+**/storage/photos

@@ -36,13 +36,13 @@ export default function Navbar() {
         className="w-full max-w-5xl glass-card rounded-full px-3 py-2.5 flex items-center justify-between"
       >
         <Link to="/" className="flex flex-col items-start pl-2 shrink-0 gap-0.5">
-          <img
-            src="/logo.png"
-            alt="Mad Tech Solutions"
+          <img 
+            src="https://pub-53f55a87e6f64c51862dbd0fa933eee1.r2.dev/common/logo_1.webp" 
+            alt="Shoot @ Sight" 
             className="h-9 w-auto object-contain"
           />
           <span className="text-[6.5px] tracking-[0.18em] font-bold text-ink/50 uppercase leading-none font-sans select-none">
-            MAKE ANYTHING DIGITAL
+            WEDDING PHOTOGRAPHERS & FILMMAKERS
           </span>
         </Link>
 
@@ -69,15 +69,25 @@ export default function Navbar() {
           })}
         </div>
 
-        <Link to="/gallery" className="shrink-0">
-          <motion.span
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
-            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-sm font-semibold shadow-glow-primary cursor-pointer"
-          >
-            Find My Photos
-          </motion.span>
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {location.pathname === '/admin' && (
+            <a href="/admin/logout" className="hidden sm:inline-flex px-3 py-2 rounded-full text-sm font-medium text-ink/70 hover:text-ink transition-colors">
+              Sign out
+            </a>
+          )}
+          <Link to="/admin" className="hidden sm:inline-flex px-3 py-2 rounded-full text-sm font-medium text-ink/70 hover:text-ink transition-colors">
+            Photographer Studio
+          </Link>
+          <Link to="/gallery">
+            <motion.span
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-sm font-semibold shadow-glow-primary cursor-pointer"
+            >
+              Find My Photos
+            </motion.span>
+          </Link>
+        </div>
       </motion.nav>
     </div>
   );

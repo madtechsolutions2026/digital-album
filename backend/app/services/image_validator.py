@@ -13,7 +13,7 @@ import logging
 from typing import Tuple, Optional
 
 import filetype
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.config import get_settings
 from app.exceptions import ValidationError
@@ -101,6 +101,11 @@ class ImageValidator:
         try:
             image = Image.open(io.BytesIO(file_content))
             image.load()  # Force loading to catch any corruption
+            # Normalize camera orientation once, before dimensions are stored
+            # and before face boxes are generated.  Without this, a portrait
+            # selfie can be detected in rotated coordinates while the saved
+            # gallery image is displayed in the opposite orientation.
+            image = ImageOps.exif_transpose(image)
         except Exception as e:
             raise ValidationError(f"Failed to load image: {str(e)}")
         
@@ -200,6 +205,11 @@ class ImageValidator:
         try:
             with Image.open(io.BytesIO(file_content)) as image:
                 width, height = image.size
+                # An EXIF-rotated WebP still needs a decode/re-encode so the
+                # stored pixels and future face boxes use the same orientation.
+                orientation = image.getexif().get(274, 1)
+                if orientation not in (1, None):
+                    return None
         except Exception:
             # Malformed header - fall back to the full validate path, which
             # will produce a proper ValidationError for the client.

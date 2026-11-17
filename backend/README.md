@@ -13,7 +13,7 @@ FastAPI-based backend system that enables automatic face recognition and photo m
 
 - **FastAPI 0.115+**: Modern async web framework
 - **PostgreSQL 15+**: Relational database with pgvector extension
-- **InsightFace**: Face detection and embedding generation (buffalo_l model)
+- **InsightFace**: Face detection and embedding generation (configurable model pack; `buffalo_s` by default)
 - **SQLAlchemy 2.0+**: Async ORM
 - **Alembic**: Database migrations
 - **Pillow 10+**: Image processing
@@ -139,7 +139,13 @@ alembic upgrade head
 
 ### 7. Download InsightFace Model
 
-The buffalo_l model will be automatically downloaded on first run. Ensure you have internet connectivity and approximately 600MB of free disk space.
+The configured model pack will be downloaded automatically on first use. The
+default `buffalo_s` pack keeps memory use low; `buffalo_l` can be selected for
+larger deployments. Do not switch packs while existing embeddings are in use:
+the packs produce different embedding spaces despite both using 512 dimensions.
+After changing the model, run the event's face-processing job to create the new
+model's embeddings before searching that event; old embeddings are retained but
+never mixed into the new model's query.
 
 ## Running the Server
 

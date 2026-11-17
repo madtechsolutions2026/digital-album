@@ -8,7 +8,9 @@ to that one event.
 
 import logging
 
-from fastapi import APIRouter, status
+import os
+
+from fastapi import APIRouter, Request, Response, status
 from sqlalchemy import select
 from pydantic import BaseModel, Field
 
@@ -35,7 +37,7 @@ class GalleryAccessRequest(BaseModel):
     summary="Unlock a private wedding gallery",
     description="Exchange an Event Code + Password for a session token scoped to that event"
 )
-async def access_gallery(request: GalleryAccessRequest):
+async def access_gallery(request: GalleryAccessRequest, response: Response, http_request: Request):
     """
     Verify an event access code + password and issue a session token.
 
@@ -72,6 +74,18 @@ async def access_gallery(request: GalleryAccessRequest):
         cover_photo = photos[0].file_path if photos else None
 
         token = create_gallery_token(event.event_id)
+
+        # Let same-origin <img> requests load local files without exposing the
+        # gallery token in a URL. The API still requires the Bearer token.
+        response.set_cookie(
+            "dg_gallery_access",
+            token,
+            max_age=30 * 24 * 60 * 60,
+            secure=http_request.url.scheme == "https" or bool(os.environ.get("RAILWAY_ENVIRONMENT")),
+            httponly=True,
+            samesite="strict",
+            path="/",
+        )
 
         logger.info(f"Gallery unlocked: event_id={event.event_id}, name={event.name}")
 

@@ -133,7 +133,8 @@ class PhotoRepository:
     async def create_face_embeddings(
         self,
         photo_id: int,
-        faces: List[Dict[str, Any]]
+        faces: List[Dict[str, Any]],
+        model_name: str = "buffalo_s",
     ) -> List[FaceEmbedding]:
         """
         Create face embedding records for a photo.
@@ -144,6 +145,7 @@ class PhotoRepository:
                    - embedding_vector: 512-dimensional vector
                    - bounding_box: dict with x1, y1, x2, y2
                    - confidence_score: float
+            model_name: InsightFace model pack used to create the vectors
             
         Returns:
             List of created FaceEmbedding objects
@@ -160,6 +162,7 @@ class PhotoRepository:
                     embedding_vector=face_data["embedding_vector"],
                     bounding_box=face_data["bounding_box"],
                     confidence_score=face_data["confidence_score"],
+                    model_name=model_name,
                     created_at=datetime.utcnow()
                 )
                 self.session.add(embedding)
@@ -288,7 +291,9 @@ class PhotoRepository:
         event_id: int,
         query_embedding: np.ndarray,
         threshold: float = 0.6,
-        limit: int = 100
+        limit: int = 100,
+        min_confidence: float = 0.0,
+        model_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for similar faces using pgvector cosine similarity.
@@ -302,6 +307,8 @@ class PhotoRepository:
             query_embedding: 512-dimensional face embedding to search for
             threshold: Minimum similarity threshold (0.0 to 1.0)
             limit: Maximum number of results to return (default 100)
+            min_confidence: Minimum stored detector confidence to include
+            model_name: Restrict search to embeddings from this model pack
             
         Returns:
             List of dictionaries containing:
@@ -323,22 +330,43 @@ class PhotoRepository:
             # We use the <=> operator which computes cosine distance
             similarity_expr = 1 - FaceEmbedding.embedding_vector.cosine_distance(query_vector)
             
-            # Query for similar faces
-            # Join FaceEmbedding with Photo to get file paths
-            # Filter by event_id and similarity threshold
-            query = (
+            # Rank matching faces within each photo first.  A wedding photo
+            # often contains several detected faces; returning every matching
+            # embedding used to duplicate the same photo in the gallery and
+            # consume the result limit before other photos were considered.
+            ranked_query = (
                 select(
                     Photo.photo_id,
                     Photo.file_path,
                     FaceEmbedding.embedding_id,
                     FaceEmbedding.bounding_box,
                     FaceEmbedding.confidence_score,
-                    similarity_expr.label("similarity_score")
+                    similarity_expr.label("similarity_score"),
+                    func.row_number().over(
+                        partition_by=Photo.photo_id,
+                        order_by=similarity_expr.desc(),
+                    ).label("photo_rank"),
                 )
                 .join(FaceEmbedding, Photo.photo_id == FaceEmbedding.photo_id)
                 .where(Photo.event_id == event_id)
                 .where(similarity_expr >= threshold)
-                .order_by(similarity_expr.desc())
+                .where(FaceEmbedding.confidence_score >= min_confidence)
+            )
+            if model_name:
+                ranked_query = ranked_query.where(FaceEmbedding.model_name == model_name)
+            ranked = ranked_query.subquery()
+
+            query = (
+                select(
+                    ranked.c.photo_id,
+                    ranked.c.file_path,
+                    ranked.c.embedding_id,
+                    ranked.c.bounding_box,
+                    ranked.c.confidence_score,
+                    ranked.c.similarity_score,
+                )
+                .where(ranked.c.photo_rank == 1)
+                .order_by(ranked.c.similarity_score.desc())
                 .limit(limit)
             )
             
@@ -354,7 +382,9 @@ class PhotoRepository:
                     "embedding_id": row.embedding_id,
                     "bounding_box": row.bounding_box,
                     "confidence_score": row.confidence_score,
-                    "similarity_score": float(row.similarity_score)
+                    # Floating-point noise around the cosine boundary should
+                    # not leak values outside the API's documented range.
+                    "similarity_score": max(0.0, min(1.0, float(row.similarity_score)))
                 })
             
             self.logger.info(

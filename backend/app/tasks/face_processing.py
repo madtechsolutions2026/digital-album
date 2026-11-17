@@ -15,6 +15,7 @@ import io
 import httpx
 
 from app.database import async_session_maker
+from app.config import get_settings
 from app.models.photo import Photo
 from app.models.face_embedding import FaceEmbedding
 from app.repositories import PhotoRepository
@@ -41,6 +42,7 @@ async def process_faces_background(job_id: str, event_id: int) -> None:
     job_store.update(job_id, status="started")
 
     try:
+        active_model = get_settings().INSIGHTFACE_MODEL
         async with async_session_maker() as db:
             photo_repo = PhotoRepository(db)
             await photo_repo.verify_event_exists(event_id)
@@ -48,7 +50,15 @@ async def process_faces_background(job_id: str, event_id: int) -> None:
             result = await db.execute(
                 select(Photo)
                 .where(Photo.event_id == event_id)
-                .outerjoin(Photo.face_embeddings)
+                # Re-process photos that have no embedding for the active
+                # model.  This makes switching from buffalo_s to buffalo_l a
+                # safe, incremental re-index instead of mixing incompatible
+                # vector spaces in the same search.
+                .outerjoin(
+                    FaceEmbedding,
+                    (FaceEmbedding.photo_id == Photo.photo_id)
+                    & (FaceEmbedding.model_name == active_model),
+                )
                 .group_by(Photo.photo_id)
                 .having(func.count(FaceEmbedding.embedding_id) == 0)
                 .order_by(Photo.uploaded_at)
@@ -141,7 +151,8 @@ async def process_faces_background(job_id: str, event_id: int) -> None:
                                     "x2": int(face_info.bbox[2]),
                                     "y2": int(face_info.bbox[3])
                                 },
-                                confidence_score=float(face_info.confidence)
+                                confidence_score=float(face_info.confidence),
+                                model_name=face_service.model_name,
                             )
                             db.add(embedding_record)
 

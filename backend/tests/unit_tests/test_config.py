@@ -243,3 +243,40 @@ class TestSettingsOverrides:
             DEBUG=True
         )
         assert settings.DEBUG is True
+
+
+class TestFaceModelSettings:
+    """Test face-model quality and compatibility settings."""
+
+    def test_face_model_defaults_preserve_existing_embeddings(self):
+        settings = Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql+asyncpg://localhost/db",
+        )
+        assert settings.INSIGHTFACE_MODEL == "buffalo_s"
+        assert settings.FACE_DETECTION_SIZE == 640
+        assert settings.FACE_MIN_DETECTION_CONFIDENCE == 0.5
+
+    def test_face_model_name_is_restricted(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                _env_file=None,
+                DATABASE_URL="postgresql+asyncpg://localhost/db",
+                INSIGHTFACE_MODEL="unknown-model",
+            )
+
+    def test_face_detection_size_must_match_model_stride(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                _env_file=None,
+                DATABASE_URL="postgresql+asyncpg://localhost/db",
+                FACE_DETECTION_SIZE=641,
+            )
+
+    def test_face_score_thresholds_are_bounded(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                _env_file=None,
+                DATABASE_URL="postgresql+asyncpg://localhost/db",
+                FACE_MIN_DETECTION_CONFIDENCE=1.1,
+            )
