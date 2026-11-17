@@ -89,6 +89,8 @@ npm run dev
 - **Frontend**: React + Vite
 - **Storage**: Local filesystem or Cloudflare R2 (configurable via `STORAGE_TYPE`)
 
+See [TECH_STACK.md](./TECH_STACK.md) for the current component overview, Railway variables, and production deployment checklist.
+
 ### Project Structure
 ```
 digital-album/
@@ -158,22 +160,9 @@ Event (1) ─→ (N) Photos (1) ─→ (N) FaceEmbeddings
 6. **Matching**: Cosine similarity query finds similar faces
 7. **Results**: Matching photos returned, sorted by similarity
 
-## 🚀 Deployment (Future)
+## 🚀 Deployment
 
-### Current: Local Development
-- Local filesystem storage
-- Synchronous processing
-- No authentication
-
-### Production Ready (TODO)
-- [x] Cloudflare R2 for images
-- [x] Background face processing (in-process FastAPI BackgroundTasks)
-- [x] WebP compression
-- [ ] Authentication (JWT)
-- [ ] Rate limiting
-- [ ] CDN integration
-- [ ] Docker deployment
-- [ ] Railway/Vercel hosting
+The project is deployed on Railway. Configure the backend and frontend as separate services; Railway deployment variables and health checks are documented in [TECH_STACK.md](./TECH_STACK.md). Production image storage should use Cloudflare R2 because Railway's local filesystem is ephemeral.
 
 ## 📝 Development Status
 
