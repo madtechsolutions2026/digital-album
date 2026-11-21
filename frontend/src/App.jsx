@@ -1332,14 +1332,17 @@ function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false })
     setIsLoading(true);
     galleryAPI.getGuestGallery(guestId)
       .then(res => {
-        if (res.data?.success && res.data?.data?.all_photos) {
-          const list = res.data.data.all_photos.map(p => ({
-            id: p.photo_id,
-            url: mediaUrl(p.file_path),
-            category: p.category || 'Ceremony',
-            similarity: p.similarity || 90,
-          }));
-          setBackendPhotos(list);
+        if (res.data?.success && res.data?.data) {
+          const rawPhotos = res.data.data.photos || res.data.data.all_photos || [];
+          if (Array.isArray(rawPhotos)) {
+            const list = rawPhotos.map(p => ({
+              id: p.photo_id,
+              url: mediaUrl(p.file_path),
+              category: p.category || 'Ceremony',
+              similarity: p.similarity || 90,
+            }));
+            setBackendPhotos(list);
+          }
         }
       })
       .catch(e => {

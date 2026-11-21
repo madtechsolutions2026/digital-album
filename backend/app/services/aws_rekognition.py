@@ -57,9 +57,9 @@ class AWSRekognitionService:
 
     def __init__(self):
         settings = get_settings()
-        self.region = getattr(settings, "AWS_REGION", "ap-south-1")
-        self.access_key = getattr(settings, "AWS_ACCESS_KEY_ID", "")
-        self.secret_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
+        self.region = os.environ.get("AWS_REGION") or getattr(settings, "AWS_REGION", "ap-southeast-2")
+        self.access_key = os.environ.get("AWS_ACCESS_KEY_ID") or getattr(settings, "AWS_ACCESS_KEY_ID", "")
+        self.secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY") or getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
         self.s3_bucket = getattr(settings, "AWS_S3_BUCKET_NAME", "")
         self.high_threshold = getattr(settings, "REKOGNITION_HIGH_CONFIDENCE_THRESHOLD", 85.0)
         self.review_threshold = getattr(settings, "REKOGNITION_REVIEW_CONFIDENCE_THRESHOLD", 60.0)

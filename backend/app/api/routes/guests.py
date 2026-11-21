@@ -455,6 +455,7 @@ async def get_guest_gallery(
             },
             "total_photos": len(all_photos),
             "photos": all_photos,
+            "all_photos": all_photos,
             "by_category": photos_by_category,
         },
     }
