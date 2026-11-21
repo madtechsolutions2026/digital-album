@@ -60,6 +60,42 @@ class Settings(BaseSettings):
         default="",
         description="Cloudflare R2 public URL (optional custom domain)"
     )
+
+    # AWS Rekognition & S3 Production Face AI Configuration
+    AWS_REGION: str = Field(
+        default="ap-south-1",
+        description="AWS Region (default Mumbai: ap-south-1)"
+    )
+
+    AWS_ACCESS_KEY_ID: str = Field(
+        default="",
+        description="AWS Access Key ID"
+    )
+
+    AWS_SECRET_ACCESS_KEY: str = Field(
+        default="",
+        description="AWS Secret Access Key"
+    )
+
+    AWS_S3_BUCKET_NAME: str = Field(
+        default="",
+        description="Private S3 bucket name for photos and guest selfies"
+    )
+
+    AWS_REKOGNITION_COLLECTION_ID: str = Field(
+        default="dg-album-production",
+        description="AWS Rekognition Collection ID for event face indexing"
+    )
+
+    REKOGNITION_HIGH_CONFIDENCE_THRESHOLD: float = Field(
+        default=85.0,
+        description="Similarity threshold for automatic guest matching (>= 85.0%)"
+    )
+
+    REKOGNITION_REVIEW_CONFIDENCE_THRESHOLD: float = Field(
+        default=60.0,
+        description="Similarity threshold for entering manual studio review queue (60.0% - 84.9%)"
+    )
     
     # Image validation limits
     MAX_FILE_SIZE: int = Field(

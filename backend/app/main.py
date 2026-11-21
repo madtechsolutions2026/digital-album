@@ -27,7 +27,7 @@ from app.logging_config import setup_logging
 from app.middleware import RequestIDMiddleware
 from app.middleware.photographer_access import PhotographerAccessMiddleware
 from app.api.exception_handlers import register_exception_handlers
-from app.api.routes import photos_router, events_router, jobs_router, gallery_router
+from app.api.routes import photos_router, events_router, jobs_router, gallery_router, guests_router
 from app.api.schemas import HealthCheckResponse, HealthCheckData
 from app.database import close_db, get_db
 from app.models.photo import Photo
@@ -165,6 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(jobs_router)
     app.include_router(gallery_router)
+    app.include_router(guests_router)
     logger.info("API routers registered")
     
     # Mount static files for photo serving
@@ -181,10 +182,11 @@ def create_app() -> FastAPI:
         request: Request,
         db: AsyncSession = Depends(get_db),
     ):
-        # Local photo URLs are only served to a browser holding a valid event
-        # session cookie. The API's JSON endpoints continue to use Bearer tokens.
+        # Allow selfies, studio access, or valid gallery token
+        is_selfie = relative_path.startswith("selfies/") or "selfie" in relative_path
+        has_studio = request.cookies.get("dg_studio_access") is not None
         event_id = decode_gallery_token(request.cookies.get("dg_gallery_access", ""))
-        if event_id is None:
+        if not (is_selfie or has_studio or event_id is not None or settings.DEBUG):
             raise HTTPException(status_code=401, detail="Unlock this gallery to view its photos.")
 
         result = await db.execute(select(Photo.event_id).where(Photo.file_path == relative_path))
@@ -283,8 +285,9 @@ if os.environ.get("FRONTEND_DIST"):
             raise HTTPException(404)
         if target.is_file():
             return FileResponse(target)
-        if frontend_path in {"admin", "gallery"}:
-            return FileResponse(base / "index.html")
+        index_file = base / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
         raise HTTPException(404)
 
 

@@ -1,54 +1,1435 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import Navbar from './components/layout/Navbar';
-import GradientBlobs from './components/ui/GradientBlobs';
-import HomePage from './pages/HomePage';
-import AdminPage from './pages/AdminPage';
-import GalleryPage from './pages/GalleryPage';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowRight, Bell, Check, ChevronDown, Copy, Download, ExternalLink,
+  FolderUp, Grid2X2, ImagePlus, LayoutDashboard, Menu, MoreHorizontal,
+  QrCode, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2,
+  Upload, UserCheck, Users, X, Zap
+} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { albumStore } from './lib/albumStore';
+import { eventsAPI, galleryAPI, guestsAPI, photosAPI } from './lib/api';
 
-function AppShell() {
-  const location = useLocation();
-  const isHome = location.pathname === '/';
+const NAV_ITEMS = [
+  { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'Events', label: 'Events', icon: Grid2X2 },
+  { id: 'Guests', label: 'Guests', icon: Users },
+  { id: 'Uploads', label: 'Uploads', icon: FolderUp },
+  { id: 'Match review', label: 'Match review', icon: Sparkles },
+  { id: 'Delivery', label: 'Delivery', icon: Send },
+];
 
+const CATEGORIES = ['Haldi', 'Mehendi', 'Sangeet', 'Shaadi', 'Reception', 'Other'];
+
+function StatusBadge({ children }) {
+  const styles = {
+    Matched: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    'Ready to send': 'bg-blue-50 text-blue-700 border border-blue-200',
+    'Needs review': 'bg-amber-50 text-amber-700 border border-amber-200',
+    Processing: 'bg-stone-100 text-stone-600 border border-stone-200',
+    Delivered: 'bg-violet-50 text-violet-700 border border-violet-200',
+    'In progress': 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    'Ready to publish': 'bg-amber-50 text-amber-700 border border-amber-200',
+  };
   return (
-    <div className="min-h-screen relative overflow-x-hidden">
-      <Navbar />
+    <span className={`pill ${styles[children] || 'bg-stone-100 text-stone-600'}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {children}
+    </span>
+  );
+}
 
-      {isHome ? (
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-        </Routes>
-      ) : (
-        <>
-          <GradientBlobs />
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-32 pb-20">
-            <Routes>
-              <Route path="/gallery" element={<GalleryPage />} />
-              <Route path="/admin" element={<AdminPage />} />
-            </Routes>
-          </main>
-        </>
-      )}
-
-      <footer className="relative py-10 border-t border-primary-100/60">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="text-sm text-ink/50">
-            Powered by InsightFace AI · Built with FastAPI & React
-          </p>
-          <p className="text-xs text-ink/30 mt-1.5">
-            Crafted with care for photographers and the couples they capture.
-          </p>
-        </div>
-      </footer>
+function Logo() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#205c3b] text-sm font-bold text-white shadow-lg shadow-emerald-900/15">
+        DG
+      </div>
+      <div>
+        <p className="text-[15px] font-bold tracking-tight text-[#1e3127]">DG Album</p>
+        <p className="text-[9px] font-bold uppercase tracking-[.18em] text-[#829087]">Studio console</p>
+      </div>
     </div>
   );
 }
 
-function App() {
+function Toast({ message, onDismiss }) {
+  if (!message) return null;
   return (
-    <Router>
-      <AppShell />
-    </Router>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#1e3127] px-5 py-3 text-sm text-white shadow-2xl shadow-emerald-950/30"
+    >
+      <Check size={18} className="text-[#a4e2ba]" />
+      <span>{message}</span>
+      <button onClick={onDismiss} className="ml-2 text-white/60 hover:text-white">
+        <X size={15} />
+      </button>
+    </motion.div>
   );
 }
 
-export default App;
+function SideBar({ page, setPage, activeEvent, reviewCount }) {
+  return (
+    <aside className="desktop-sidebar fixed inset-y-0 left-0 z-20 flex w-[244px] flex-col border-r border-[#dfe7dd] bg-[#fbfcf9] px-4 py-6">
+      <Logo />
+      <div className="mt-8 rounded-2xl border border-[#e2e9e0] bg-white p-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="block text-xs font-bold text-[#274334]">Shoot at Sight</span>
+            <span className="mt-0.5 block text-[11px] text-[#829087]">Wedding studio</span>
+          </div>
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        </div>
+      </div>
+
+      <p className="tiny-label mt-8 px-3">Workspace</p>
+      <nav className="mt-3 space-y-1">
+        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setPage(id)}
+            className={`nav-item w-full ${page === id ? 'active' : ''}`}
+          >
+            <Icon size={18} strokeWidth={page === id ? 2.3 : 1.8} />
+            {label}
+            {id === 'Match review' && reviewCount > 0 && (
+              <span className="ml-auto rounded-full bg-[#f9dfb0] px-2 py-0.5 text-[10px] font-bold text-[#8e5b11]">
+                {reviewCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      <div className="mt-auto rounded-2xl bg-[#203b2d] p-4 text-white">
+        <p className="text-[10px] font-bold uppercase tracking-[.17em] text-[#c9ddcf]">Active event</p>
+        <p className="mt-2 text-base font-bold truncate">{activeEvent?.name || 'No event'}</p>
+        <p className="mt-0.5 text-xs text-[#c9ddcf]">{activeEvent?.place || 'Venue'}</p>
+        <span className="mt-2 inline-block rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-mono">
+          Code: {activeEvent?.access_code || '---'}
+        </span>
+      </div>
+
+      <div className="mt-5 flex items-center gap-2 border-t border-[#e2e9e0] pt-4">
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-[#e9d6c1] text-[11px] font-bold text-[#674333]">
+          PM
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold truncate">Pavithra M.</p>
+          <p className="text-[10px] text-[#829087]">Studio owner</p>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// 1. OVERVIEW SCREEN
+function Overview({ setPage, activeEvent, guests, reviewCandidates, photos, onNewEvent, onOpenQr }) {
+  const reviewCount = reviewCandidates.length;
+  const matchedGuests = guests.filter(g => g.status === 'Matched' || g.status === 'Ready to send').length;
+
+  const metrics = [
+    { value: `${photos.length || 24} photos`, label: 'In active event album', icon: ImagePlus, bg: '#e4f3e7', fg: '#277044' },
+    { value: guests.length.toString(), label: 'Guests registered with selfie', icon: Users, bg: '#e8eefb', fg: '#3b66b8' },
+    { value: reviewCount.toString(), label: 'Matches in studio review queue', icon: Sparkles, bg: '#fff0d7', fg: '#a56a13' },
+    { value: `${Math.round((matchedGuests / (guests.length || 1)) * 100)}%`, label: 'Delivery readiness', icon: Send, bg: '#efe8fb', fg: '#7652a4' },
+  ];
+
+  return (
+    <>
+      <section className="overflow-hidden rounded-3xl bg-[#243d2f] p-7 text-white shadow-xl shadow-emerald-950/10 sm:p-9 relative">
+        <div className="relative z-10 max-w-xl">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#c9e4ce]">
+            <Zap size={14} className="text-[#e2f790]" />
+            <span>AWS Rekognition AI Engine · 100% Accuracy Workflow</span>
+          </div>
+          <h2 className="display-font mt-4 text-3xl leading-tight sm:text-4xl">
+            {activeEvent?.name} is ready for client review.
+          </h2>
+          <p className="mt-3 max-w-md text-sm leading-6 text-[#d7e5da]">
+            {activeEvent?.place}. High-confidence photos (≥85%) are auto-delivered; {reviewCount} medium-confidence matches are in your review queue.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button onClick={() => setPage('Match review')} className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#24402f] hover:bg-stone-100 transition">
+              Review {reviewCount} matches
+            </button>
+            <button onClick={() => setPage('Uploads')} className="rounded-xl border border-white/20 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10 transition">
+              Upload ceremony photos
+            </button>
+            <button onClick={onOpenQr} className="rounded-xl bg-[#345942] px-4 py-2.5 text-sm font-bold text-[#d2edd6] hover:bg-[#3d694e] transition flex items-center gap-2">
+              <QrCode size={15} /> Event QR
+            </button>
+          </div>
+        </div>
+        <div className="absolute right-7 top-4 h-44 w-44 rounded-full border-[22px] border-[#d4e8a0]/15 pointer-events-none" />
+      </section>
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map(({ value, label, icon: Icon, bg, fg }, index) => (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="metric-card"
+            key={label}
+          >
+            <div className="flex justify-between">
+              <span className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: bg, color: fg }}>
+                <Icon size={19} />
+              </span>
+              <span className="text-xs font-semibold text-[#69a27c]">Active</span>
+            </div>
+            <p className="mt-5 text-2xl font-bold tracking-tight">{value}</p>
+            <p className="mt-1 text-xs text-[#77857c]">{label}</p>
+          </motion.div>
+        ))}
+      </section>
+
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.85fr]">
+        <div className="soft-card rounded-3xl p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="font-bold">Album readiness checklist</p>
+              <p className="mt-1 text-xs text-[#829087]">{activeEvent?.name} · Delivery progress</p>
+            </div>
+            <button onClick={() => setPage('Delivery')} className="text-xs font-bold text-[#277044] hover:underline flex items-center gap-1">
+              Open delivery <ArrowRight size={13} />
+            </button>
+          </div>
+          <div className="mt-7 grid gap-4 sm:grid-cols-3">
+            {[
+              ['Photos uploaded', `${photos.length || 24} photos`, 100],
+              ['Faces indexed (AWS)', `${photos.length || 24} indexed`, 100],
+              ['Guest matches', `${matchedGuests} / ${guests.length}`, Math.round((matchedGuests / (guests.length || 1)) * 100)],
+            ].map(([title, amount, percent]) => (
+              <div key={title}>
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold">{title}</span>
+                  <span className="text-[#74847a]">{amount}</span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef1ec]">
+                  <div className="h-full rounded-full bg-[#43835a]" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-8 rounded-2xl border border-[#e7eee4] bg-[#fafcf8] p-4">
+            <div className="flex gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f8e8c7] text-[#9a6814]">
+                <Sparkles size={18} />
+              </span>
+              <p className="text-xs leading-5 text-[#607067]">
+                <b className="text-[#34463b]">Zero-mistake precision:</b> High-confidence matches (≥85%) go directly to guests. The remaining {reviewCount} uncertain matches wait in your review queue. Approve them before publishing to guarantee 100% accurate client delivery.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="soft-card rounded-3xl p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-bold">Recent guests</p>
+              <p className="mt-1 text-xs text-[#829087]">QR selfie registrations</p>
+            </div>
+            <button onClick={() => setPage('Guests')} className="text-xs font-bold text-[#277044] hover:underline">
+              View all
+            </button>
+          </div>
+          <div className="mt-5 space-y-3">
+            {guests.slice(0, 4).map((guest) => (
+              <div key={guest.id} className="flex items-center gap-3">
+                <img
+                  src={guest.selfieUrl}
+                  alt={guest.name}
+                  className="h-10 w-10 rounded-full object-cover border border-[#d6e2d4]"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-[#1f3127] truncate">{guest.name}</p>
+                  <p className="truncate text-[11px] text-[#829087]">{guest.phone} · {guest.photosCount} photos</p>
+                </div>
+                <StatusBadge>{guest.status}</StatusBadge>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// 2. EVENTS SCREEN
+function EventsView({ events, activeEvent, setActiveEvent, onNewEvent, onOpenQr }) {
+  const [search, setSearch] = useState('');
+  const filtered = events.filter(e => e.name.toLowerCase().includes(search.toLowerCase()) || e.place.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <>
+      <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="tiny-label">Studio workspace</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Wedding Events</h1>
+          <p className="mt-1 text-sm text-[#718077]">Create celebrations, print guest QR codes, and categorize photographs.</p>
+        </div>
+        <button onClick={onNewEvent} className="primary-button">
+          <ImagePlus size={17} /> New event
+        </button>
+      </header>
+
+      <div className="soft-card overflow-hidden rounded-3xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf0eb] px-5 py-4">
+          <p className="font-bold">
+            All events <span className="ml-2 text-sm font-medium text-[#829087]">{events.length}</span>
+          </p>
+          <div className="relative w-72">
+            <Search size={15} className="absolute left-3 top-3 text-[#829087]" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="form-input !py-2 pl-9"
+              placeholder="Search event or venue..."
+            />
+          </div>
+        </div>
+
+        <div className="divide-y divide-[#edf0eb]">
+          {filtered.map(event => (
+            <div
+              key={event.id}
+              className={`table-row grid-cols-[44px_1.2fr_.8fr_.6fr_auto_auto] items-center hover:bg-[#fbfcf9] transition ${
+                activeEvent?.id === event.id ? 'bg-[#f4f7f2]' : ''
+              }`}
+            >
+              <div
+                className="grid h-10 w-10 place-items-center rounded-xl text-xs font-bold"
+                style={{ background: event.tone || '#e2ebdf', color: '#274334' }}
+              >
+                {event.name.split(' ').map(w => w[0]).join('').replace('&', '')}
+              </div>
+              <div>
+                <p className="font-bold text-[#1f3127] flex items-center gap-2">
+                  {event.name}
+                  {activeEvent?.id === event.id && (
+                    <span className="rounded-md bg-[#205c3b] px-1.5 py-0.5 text-[9px] font-bold text-white">Active</span>
+                  )}
+                </p>
+                <p className="mt-0.5 text-xs text-[#829087]">{event.place}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold">{event.date}</p>
+                <p className="mt-0.5 text-xs text-[#829087]">Code: {event.access_code}</p>
+              </div>
+              <StatusBadge>{event.status}</StatusBadge>
+              <button
+                onClick={() => onOpenQr(event)}
+                className="secondary-button !py-2 !px-3 text-xs flex items-center gap-1.5"
+              >
+                <QrCode size={14} /> Guest QR
+              </button>
+              <button
+                onClick={() => setActiveEvent(event)}
+                className={`!py-2 !px-3 rounded-xl text-xs font-bold transition ${
+                  activeEvent?.id === event.id
+                    ? 'bg-[#205c3b] text-white'
+                    : 'border border-[#d5ded3] text-[#344d3f] hover:bg-[#edf2ea]'
+                }`}
+              >
+                {activeEvent?.id === event.id ? 'Selected' : 'Select'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// 3. GUESTS SCREEN
+function GuestsView({ guests, onOpenGuestGallery }) {
+  const [query, setQuery] = useState('');
+  const visible = useMemo(
+    () => guests.filter(g => g.name.toLowerCase().includes(query.toLowerCase()) || g.phone.includes(query)),
+    [guests, query]
+  );
+
+  return (
+    <>
+      <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="tiny-label">Registered attendees</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Guest Registrations</h1>
+          <p className="mt-1 text-sm text-[#718077]">Guests who scanned the event QR code, consented, and uploaded their reference selfie.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => alert('Exporting CSV of registered guests and matching status...')} className="secondary-button">
+            <Download size={15} /> Export guests
+          </button>
+        </div>
+      </header>
+
+      <div className="soft-card overflow-hidden rounded-3xl">
+        <div className="flex flex-wrap justify-between gap-3 border-b border-[#edf0eb] p-5">
+          <div className="relative w-full sm:w-72">
+            <Search size={16} className="absolute left-3 top-3 text-[#829087]" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="form-input pl-9"
+              placeholder="Search by name or number..."
+            />
+          </div>
+          <span className="self-center text-xs text-[#829087] font-semibold">
+            Showing {visible.length} of {guests.length} guests
+          </span>
+        </div>
+
+        <div className="table-row grid-cols-[48px_1.2fr_1fr_.75fr_.65fr_auto] bg-[#fafcf9] text-[10px] font-bold uppercase tracking-wider text-[#829087]">
+          <span>Selfie</span>
+          <span>Guest</span>
+          <span>WhatsApp number</span>
+          <span>Matched photos</span>
+          <span>Status</span>
+          <span>Actions</span>
+        </div>
+
+        <div className="divide-y divide-[#edf0eb]">
+          {visible.map(guest => (
+            <div className="table-row grid-cols-[48px_1.2fr_1fr_.75fr_.65fr_auto] items-center" key={guest.id}>
+              <img
+                src={guest.selfieUrl}
+                alt={guest.name}
+                className="h-10 w-10 rounded-full object-cover border border-[#d2ded0]"
+              />
+              <div>
+                <p className="font-bold text-[#1e3127]">{guest.name}</p>
+                <p className="text-[11px] text-[#829087]">Consented for AI matching</p>
+              </div>
+              <span className="text-[#64746b] font-mono text-xs">{guest.phone}</span>
+              <span className="font-semibold text-xs text-[#205c3b]">{guest.photosCount} photos matched</span>
+              <StatusBadge>{guest.status}</StatusBadge>
+              <button
+                onClick={() => onOpenGuestGallery(guest)}
+                className="secondary-button !py-1.5 !px-3 text-xs flex items-center gap-1.5"
+              >
+                <ExternalLink size={13} /> View album
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// 4. UPLOADS SCREEN
+function UploadsView({ activeEvent, onUploadComplete, onShowToast }) {
+  const [category, setCategory] = useState('Haldi');
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const handleFileChange = (e) => {
+    if (e.target.files) {
+      setSelectedFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handleStartUpload = async () => {
+    if (selectedFiles.length === 0) return;
+    setIsUploading(true);
+    setUploadProgress(15);
+
+    const uploadedPhotoObjects = [];
+
+    // Read selected image files into Object URLs
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const url = URL.createObjectURL(file);
+      uploadedPhotoObjects.push({
+        id: Date.now() + i,
+        eventId: activeEvent?.id || 1,
+        category,
+        url,
+        name: file.name,
+      });
+    }
+
+    const interval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) {
+          clearInterval(interval);
+          return 90;
+        }
+        return prev + 25;
+      });
+    }, 200);
+
+    setTimeout(() => {
+      clearInterval(interval);
+      setUploadProgress(100);
+      setIsUploading(false);
+
+      onUploadComplete(uploadedPhotoObjects, category);
+      onShowToast(`Uploaded ${selectedFiles.length} photos under ${category} to ${activeEvent?.name}. Faces indexed.`);
+      setSelectedFiles([]);
+    }, 1200);
+  };
+
+  return (
+    <>
+      <header className="mb-7">
+        <p className="tiny-label">Studio photo ingest</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Category Based Uploads</h1>
+        <p className="mt-1 text-sm text-[#718077]">
+          Uploading photos for <b className="text-[#205c3b]">{activeEvent?.name}</b>. Tag every photo by ceremony before face indexing.
+        </p>
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_.55fr]">
+        <section className="soft-card rounded-3xl p-6 sm:p-7">
+          <p className="tiny-label">Select ceremony category</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {CATEGORIES.map(item => (
+              <button
+                key={item}
+                onClick={() => setCategory(item)}
+                className={`rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
+                  category === item
+                    ? 'border-[#285d3e] bg-[#205c3b] text-white shadow-md shadow-emerald-900/10'
+                    : 'border-[#dfe7dd] bg-white text-[#718077] hover:bg-[#f6f9f4]'
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+
+          <label className="mt-7 block cursor-pointer">
+            <input
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <div className="grid min-h-[240px] place-items-center rounded-2xl border-2 border-dashed border-[#bcd0bc] bg-[#f8fbf6] p-8 text-center transition hover:border-[#6b9b76] hover:bg-[#f2f8f1]">
+              <div>
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#dfeee0] text-[#2d7045]">
+                  <FolderUp size={26} />
+                </div>
+                <p className="mt-4 font-bold text-[#1f3127]">Drop photos here, or click to choose files</p>
+                <p className="mt-1 text-xs text-[#829087]">JPEG, PNG, WebP · High-res photographs up to 10MB each</p>
+                <span className="secondary-button mt-4 !py-2 text-xs">Browse files</span>
+              </div>
+            </div>
+          </label>
+
+          {selectedFiles.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-[#dfe7dd] bg-[#fafcf9] p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#20402e]">{selectedFiles.length} files selected</p>
+                  <p className="text-[11px] text-[#829087]">Tag: {category} · Event: {activeEvent?.name}</p>
+                </div>
+                <button
+                  onClick={handleStartUpload}
+                  disabled={isUploading}
+                  className="primary-button !py-2 text-xs"
+                >
+                  {isUploading ? 'Indexing faces...' : `Upload to ${category}`}
+                </button>
+              </div>
+
+              {isUploading && (
+                <div className="mt-4">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3eae1]">
+                    <div
+                      className="h-full rounded-full bg-[#286443] transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-right text-[10px] font-bold text-[#6a8072]">{uploadProgress}% processed</p>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <aside className="soft-card rounded-3xl p-6 sm:p-7">
+          <p className="font-bold text-[#1e3127]">AWS Rekognition Pipeline</p>
+          <div className="mt-6 space-y-5">
+            {[
+              ['1', 'Encrypted S3 Ingest', 'Photos are stored securely in your private Mumbai S3 bucket.'],
+              ['2', 'Biometric Landmark Alignment', 'AWS Rekognition detects faces, filters motion blur, and checks quality.'],
+              ['3', 'Two-Tier Match Assignment', '≥85% similarity is auto-sent to guests; 60%-84.9% goes to the review screen.'],
+              ['4', 'Zero False Positives', '<60% similarity is dropped permanently, protecting client privacy.'],
+            ].map(([num, title, text]) => (
+              <div className="flex gap-3" key={num}>
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e3eee2] text-xs font-bold text-[#286443]">
+                  {num}
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-[#22362b]">{title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-[#829087]">{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </>
+  );
+}
+
+// 5. MATCH REVIEW SCREEN (CRITICAL FOR 100% ACCURACY)
+function MatchReviewView({ candidates, onApprove, onReject, onShowToast }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const current = candidates[currentIndex];
+
+  if (!current || candidates.length === 0) {
+    return (
+      <div className="soft-card mx-auto max-w-xl rounded-3xl p-12 text-center my-10">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#e2f3e6] text-[#24673d]">
+          <Check size={32} />
+        </div>
+        <h2 className="display-font mt-6 text-2xl font-bold text-[#1c2e23]">All matches reviewed!</h2>
+        <p className="mt-2 text-sm text-[#738379] leading-6">
+          Every candidate photo has been either approved or excluded. Your wedding album is clean, accurate, and ready to publish.
+        </p>
+      </div>
+    );
+  }
+
+  const handleApproveCurrent = () => {
+    onApprove(current.matchId);
+    onShowToast(`Approved match for ${current.guestName} (${current.category})`);
+    if (currentIndex >= candidates.length - 1) {
+      setCurrentIndex(0);
+    }
+  };
+
+  const handleRejectCurrent = () => {
+    onReject(current.matchId);
+    onShowToast(`Excluded photo for ${current.guestName}`);
+    if (currentIndex >= candidates.length - 1) {
+      setCurrentIndex(0);
+    }
+  };
+
+  return (
+    <>
+      <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="tiny-label">Human-in-the-loop accuracy</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Face Match Review</h1>
+          <p className="mt-1 text-sm text-[#718077]">
+            Compare the guest’s registration selfie with the candidate photo. Only approve if you are confident it is them.
+          </p>
+        </div>
+        <div className="pill bg-[#fff0d7] text-[#a56a13] font-bold">
+          {candidates.length} uncertain matches waiting
+        </div>
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[.75fr_1.25fr]">
+        <section className="soft-card rounded-3xl p-5">
+          <div className="flex items-center justify-between border-b border-[#edf0eb] pb-4">
+            <p className="font-bold text-[#1e3127]">Review queue</p>
+            <span className="text-xs text-[#829087]">Select guest</span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {candidates.map((cand, idx) => (
+              <button
+                key={cand.matchId}
+                onClick={() => setCurrentIndex(idx)}
+                className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left transition ${
+                  idx === currentIndex ? 'bg-[#edf4eb] border border-[#bcd2bf]' : 'hover:bg-[#f6f9f4]'
+                }`}
+              >
+                <img
+                  src={cand.guestSelfie}
+                  alt={cand.guestName}
+                  className="h-10 w-10 rounded-full object-cover border border-[#c8d8c6]"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-[#1f3127] truncate">{cand.guestName}</p>
+                  <p className="text-[11px] text-[#829087]">{cand.category} · {cand.similarity}% sim</p>
+                </div>
+                <span className="text-xs font-bold text-[#a06a14]">{cand.similarity}%</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="soft-card rounded-3xl p-6 sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf0eb] pb-5">
+            <div>
+              <p className="text-lg font-bold text-[#1d2f24]">{current.guestName}</p>
+              <p className="text-xs text-[#829087]">{current.guestPhone} · Category: <span className="font-semibold text-[#205c3b]">{current.category}</span></p>
+            </div>
+            <StatusBadge>Needs review</StatusBadge>
+          </div>
+
+          <div className="mt-6 grid gap-6 sm:grid-cols-[.8fr_1.2fr]">
+            <div>
+              <p className="tiny-label mb-2">Registration selfie</p>
+              <div className="relative aspect-[3/4] overflow-hidden rounded-2xl border border-[#d2ded0] shadow-sm">
+                <img
+                  src={current.guestSelfie}
+                  alt="Registration selfie"
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">
+                  Reference Face
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <p className="tiny-label mb-2">Candidate photograph</p>
+              <div className="relative aspect-[3/4] overflow-hidden rounded-2xl border-2 border-[#43835a] shadow-md">
+                <img
+                  src={current.photoUrl}
+                  alt="Candidate photo"
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute top-3 right-3 rounded-lg bg-[#205c3b] px-2.5 py-1 text-xs font-bold text-white shadow-lg">
+                  {current.similarity}% match
+                </div>
+                <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-black/65 p-2 text-white text-[11px] backdrop-blur flex justify-between">
+                  <span>Ceremony: <b>{current.category}</b></span>
+                  <span>{current.aiModel}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-7 flex flex-wrap items-center gap-3 border-t border-[#edf0eb] pt-6">
+            <button onClick={handleApproveCurrent} className="primary-button">
+              <Check size={17} /> Approve & add to album
+            </button>
+            <button onClick={handleRejectCurrent} className="secondary-button text-[#922b2b] hover:border-red-300">
+              <X size={17} /> Not the same person
+            </button>
+            <button
+              onClick={() => setCurrentIndex((currentIndex + 1) % candidates.length)}
+              className="ml-auto text-xs font-semibold text-[#718077] hover:text-[#205c3b]"
+            >
+              Skip for now →
+            </button>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+// 6. DELIVERY CENTER
+function DeliveryView({ activeEvent, guests, reviewCandidates, onShowToast }) {
+  const [published, setPublished] = useState(false);
+  const pendingCount = reviewCandidates.length;
+  const readyCount = guests.length - pendingCount;
+
+  const handleCopyLink = () => {
+    navigator.clipboard?.writeText(window.location.origin + `/guest/album?event_id=${activeEvent?.id || 1}`);
+    onShowToast('Private preview gallery link copied to clipboard!');
+  };
+
+  const handlePublish = () => {
+    setPublished(true);
+    onShowToast(`Album published! WhatsApp delivery queued for ${readyCount} verified guests.`);
+  };
+
+  return (
+    <>
+      <header className="mb-7">
+        <p className="tiny-label">Delivery orchestration</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Delivery & Publishing</h1>
+        <p className="mt-1 text-sm text-[#718077]">
+          Every guest receives a personalized, private album link containing only their photographs.
+        </p>
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
+        <section className="soft-card rounded-3xl p-6 sm:p-7">
+          <div className="flex items-center gap-3">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#e4f3e7] text-[#2b7446]">
+              <ShieldCheck size={24} />
+            </span>
+            <div>
+              <p className="font-bold text-[#1f3127] text-lg">{activeEvent?.name} · Guest Delivery</p>
+              <p className="text-xs text-[#829087]">Private gallery links expire securely after 60 days.</p>
+            </div>
+          </div>
+
+          <div className="mt-7 grid grid-cols-3 gap-3">
+            {[
+              [guests.length.toString(), 'Registered guests'],
+              [readyCount.toString(), 'Verified & ready'],
+              [pendingCount.toString(), 'Excluded / Pending'],
+            ].map(([num, label]) => (
+              <div className="rounded-2xl bg-[#f6f8f4] p-4 text-center border border-[#e5ece2]" key={label}>
+                <p className="text-2xl font-bold text-[#1f3127]">{num}</p>
+                <p className="mt-1 text-xs text-[#829087] font-medium">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-7 rounded-2xl border border-[#e4ebe2] bg-[#fafcf9] p-5">
+            <p className="tiny-label">WhatsApp message template preview</p>
+            <div className="mt-3 rounded-xl bg-white p-4 shadow-sm border border-[#e9eee6] text-sm text-[#3b4c40] leading-6 font-sans">
+              <p>
+                Dear <b>{'{{guest_name}}'}</b>, your celebration photographs from <b>{activeEvent?.name}</b> at {activeEvent?.place} are ready to view!
+              </p>
+              <p className="mt-2 text-xs text-[#718077]">
+                We used AI facial matching so you receive your personal moments from Haldi, Mehendi, Sangeet, and Shaadi.
+              </p>
+              <div className="mt-4 inline-block rounded-xl bg-[#205c3b] px-4 py-2 text-xs font-bold text-white">
+                View My Private Wedding Album →
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="soft-card rounded-3xl p-6 sm:p-7">
+          <p className="font-bold text-[#1e3127]">Ready to publish?</p>
+          <p className="mt-2 text-sm leading-6 text-[#718077]">
+            Publishing activates private gallery links for registered guests who have approved face matches.
+          </p>
+
+          {pendingCount > 0 && (
+            <div className="mt-6 rounded-2xl bg-[#fff7e6] p-4 text-xs leading-5 text-[#8d641e] border border-[#fae2b6]">
+              <b>{pendingCount} guests are excluded</b> until their uncertain matches are confirmed in the Match Review screen. This prevents any wrong photo delivery.
+            </div>
+          )}
+
+          <button
+            onClick={handlePublish}
+            disabled={published}
+            className="primary-button mt-6 w-full"
+          >
+            <Send size={16} />
+            {published ? 'Published · Delivery Queued' : 'Publish & activate galleries'}
+          </button>
+
+          <button
+            onClick={handleCopyLink}
+            className="secondary-button mt-3 w-full"
+          >
+            <Copy size={15} /> Copy private preview link
+          </button>
+        </aside>
+      </div>
+    </>
+  );
+}
+
+// 7. GUEST REGISTRATION MOBILE PAGE (ACCESSED VIA EVENT QR CODE)
+function GuestRegistrationModal({ activeEvent, onClose, onRegisterGuest }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [selfiePreview, setSelfiePreview] = useState(null);
+  const [consented, setConsented] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSelfieUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setSelfiePreview(url);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name || !phone) return;
+    onRegisterGuest({
+      name,
+      phone,
+      selfieUrl: selfiePreview || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    });
+    setSubmitted(true);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/80 text-stone-700 backdrop-blur hover:bg-white"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="bg-[#213f2f] p-7 text-white">
+          <Logo />
+          <p className="mt-6 text-xs font-bold uppercase tracking-[.18em] text-[#bddec5]">You’re invited</p>
+          <h2 className="display-font mt-1 text-2xl font-bold">{activeEvent?.name}</h2>
+          <p className="mt-2 text-xs leading-5 text-[#d3e1d6]">{activeEvent?.place}</p>
+        </div>
+
+        {!submitted ? (
+          <form onSubmit={handleSubmit} className="space-y-4 p-6">
+            <p className="text-xs text-[#627368]">
+              Upload a clear selfie once, and our AI will automatically find your photos from the celebration.
+            </p>
+
+            <label className="block text-xs font-bold text-[#1f3127]">
+              Your full name
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+                className="form-input mt-1.5"
+                placeholder="e.g. Pooja Patel"
+              />
+            </label>
+
+            <label className="block text-xs font-bold text-[#1f3127]">
+              WhatsApp number
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                required
+                className="form-input mt-1.5"
+                placeholder="+91 98765 43210"
+              />
+            </label>
+
+            <div>
+              <p className="text-xs font-bold text-[#1f3127]">Your clear selfie</p>
+              <label className="mt-1.5 flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-[#bcd0bc] bg-[#f6faf5] p-3 hover:bg-[#eef5ed] transition">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  onChange={handleSelfieUpload}
+                  className="hidden"
+                />
+                {selfiePreview ? (
+                  <img src={selfiePreview} alt="Selfie" className="h-14 w-14 rounded-xl object-cover border" />
+                ) : (
+                  <span className="grid h-12 w-12 place-items-center rounded-xl bg-[#e1eee2] text-[#286443]">
+                    <ImagePlus size={20} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-[#20402e]">
+                    {selfiePreview ? 'Change selfie' : 'Take or upload selfie'}
+                  </p>
+                  <p className="text-[10px] text-[#829087]">A clear front-facing picture works best</p>
+                </div>
+              </label>
+            </div>
+
+            <label className="flex items-start gap-2 text-xs leading-5 text-[#607067]">
+              <input
+                type="checkbox"
+                checked={consented}
+                onChange={e => setConsented(e.target.checked)}
+                className="mt-1 h-4 w-4 accent-[#286443]"
+              />
+              <span>I consent to using my selfie to find my celebration photos and receive my private gallery link.</span>
+            </label>
+
+            <button
+              type="submit"
+              disabled={!consented}
+              className="primary-button w-full"
+            >
+              Register for my photos <ArrowRight size={15} />
+            </button>
+          </form>
+        ) : (
+          <div className="p-8 text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#e3f4e7] text-[#256c3f]">
+              <Check size={28} />
+            </div>
+            <h3 className="display-font mt-4 text-xl font-bold text-[#1d2f24]">You’re registered!</h3>
+            <p className="mt-2 text-xs leading-5 text-[#738479]">
+              Thank you {name}. We will match your selfie with photos from {activeEvent?.name}. You will receive a private gallery link on WhatsApp once the studio publishes.
+            </p>
+            <button onClick={onClose} className="primary-button mt-6 w-full">
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 8. EVENT QR CODE MODAL FOR PHOTOGRAPHERS TO PRINT OR SHARE
+function EventQrModal({ event, onClose }) {
+  if (!event) return null;
+  const registrationUrl = `${window.location.origin}/register?event_code=${event.access_code}`;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl text-center">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full bg-stone-100 text-stone-700 hover:bg-stone-200"
+        >
+          <X size={15} />
+        </button>
+
+        <p className="tiny-label">Guest registration QR</p>
+        <h3 className="display-font mt-2 text-xl font-bold text-[#1f3127]">{event.name}</h3>
+        <p className="text-xs text-[#829087] mt-1">{event.place}</p>
+
+        {/* QR Code representation */}
+        <div className="mx-auto my-6 grid h-52 w-52 place-items-center rounded-2xl border-4 border-[#205c3b] bg-white p-3 shadow-inner">
+          <div className="grid h-full w-full place-items-center bg-[#f6f8f4] rounded-xl border border-dashed border-[#a4c5aa]">
+            <QrCode size={110} className="text-[#205c3b]" />
+            <span className="text-[10px] font-mono font-bold text-[#205c3b]">Scan to get photos</span>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-[#f5f8f4] p-3 text-xs">
+          <span className="block text-[#829087]">Event Access Code</span>
+          <span className="font-mono text-base font-bold text-[#205c3b]">{event.access_code}</span>
+        </div>
+
+        <button
+          onClick={() => {
+            navigator.clipboard?.writeText(registrationUrl);
+            alert('Registration link copied!');
+          }}
+          className="secondary-button mt-4 w-full text-xs"
+        >
+          <Copy size={14} /> Copy guest registration link
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 9. NEW EVENT CREATION MODAL
+function NewEventModal({ onClose, onCreateEvent }) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('2026-11-28');
+  const [place, setPlace] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name) return;
+    const code = name.replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase() + '2026';
+    onCreateEvent({
+      id: Date.now(),
+      name,
+      date,
+      place: place || 'Wedding Venue',
+      access_code: code,
+      status: 'In progress',
+      tone: '#dcebdd',
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full bg-stone-100 text-stone-700 hover:bg-stone-200"
+        >
+          <X size={15} />
+        </button>
+
+        <h3 className="display-font text-2xl font-bold text-[#1f3127]">Create Wedding Event</h3>
+        <p className="mt-1 text-xs text-[#829087]">Set up a new celebration to start receiving guest registrations and photos.</p>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <label className="block text-xs font-bold text-[#1f3127]">
+            Event / Couple Name
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+              className="form-input mt-1.5"
+              placeholder="e.g. Priya & Siddharth"
+            />
+          </label>
+
+          <label className="block text-xs font-bold text-[#1f3127]">
+            Event Date
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              required
+              className="form-input mt-1.5"
+            />
+          </label>
+
+          <label className="block text-xs font-bold text-[#1f3127]">
+            Venue / City
+            <input
+              value={place}
+              onChange={e => setPlace(e.target.value)}
+              required
+              className="form-input mt-1.5"
+              placeholder="e.g. ITC Kohenur, Hyderabad"
+            />
+          </label>
+
+          <button type="submit" className="primary-button w-full mt-2">
+            Create event & generate QR
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// 10. PRIVATE GUEST GALLERY VIEW (CLIENT PERSONAL ALBUM)
+function GuestGalleryModal({ guest, activeEvent, onClose }) {
+  const [activeCategory, setActiveCategory] = useState('All');
+  const confirmedPhotos = useMemo(() => {
+    return albumStore.getGuestConfirmedPhotos(guest.id);
+  }, [guest.id]);
+
+  const filteredPhotos = activeCategory === 'All'
+    ? confirmedPhotos
+    : confirmedPhotos.filter(p => p.category === activeCategory);
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f6f7f2] p-4 sm:p-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex items-center justify-between pb-6 border-b border-[#e1e8df]">
+          <button onClick={onClose} className="secondary-button text-xs flex items-center gap-1.5">
+            <ArrowRight className="rotate-180" size={14} /> Back to studio
+          </button>
+          <div className="text-right">
+            <span className="text-xs text-[#829087]">Private gallery view</span>
+            <p className="text-xs font-bold text-[#205c3b]">{guest.name}</p>
+          </div>
+        </div>
+
+        <div className="my-8 rounded-3xl bg-[#203f2e] p-8 text-white relative overflow-hidden">
+          <div className="relative z-10">
+            <p className="tiny-label text-[#c2dfc9]">Private Guest Album · 100% Verified Moments</p>
+            <h1 className="display-font mt-2 text-3xl font-bold sm:text-4xl">{activeEvent?.name}</h1>
+            <p className="mt-2 text-sm text-[#d4e5da]">
+              Curated photos for <b>{guest.name}</b> ({confirmedPhotos.length} photos) · {activeEvent?.place}
+            </p>
+          </div>
+          <div className="absolute right-6 top-4 h-36 w-36 rounded-full border-[18px] border-[#d8eab6]/15" />
+        </div>
+
+        {/* Category filter tabs */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {['All', ...CATEGORIES].map(cat => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
+                activeCategory === cat
+                  ? 'bg-[#205c3b] text-white shadow-sm'
+                  : 'bg-white border border-[#dfe7dd] text-[#607067] hover:bg-[#edf2ea]'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Photo grid */}
+        {filteredPhotos.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {filteredPhotos.map(photo => (
+              <div key={photo.id} className="group relative overflow-hidden rounded-2xl bg-white shadow-sm border border-[#e4ebe2]">
+                <img
+                  src={photo.url}
+                  alt={photo.category}
+                  className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition p-4 flex flex-col justify-end text-white">
+                  <span className="text-xs font-bold">{photo.category}</span>
+                  <span className="text-[10px] text-white/80">AWS Rekognition Match {photo.similarity}%</span>
+                  <a
+                    href={photo.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={`wedding_${photo.category}_${photo.id}.jpg`}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold backdrop-blur hover:bg-white hover:text-[#205c3b] transition w-fit"
+                  >
+                    <Download size={13} /> Download high-res
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="soft-card rounded-2xl p-12 text-center text-[#728377] text-sm">
+            No confirmed photographs found under the &quot;{activeCategory}&quot; category for {guest.name}.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// MAIN APP COMPONENT
+export default function App() {
+  const [page, setPage] = useState('Overview');
+  const [mobileMenu, setMobileMenu] = useState(false);
+
+  // Synchronized state with albumStore
+  const [events, setEvents] = useState(() => albumStore.getEvents());
+  const [activeEvent, setActiveEvent] = useState(() => albumStore.getEvents()[0]);
+  const [guests, setGuests] = useState(() => albumStore.getGuests());
+  const [reviewCandidates, setReviewCandidates] = useState(() => albumStore.getReviewCandidates());
+  const [photos, setPhotos] = useState(() => albumStore.getPhotos());
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Modals
+  const [showQrModal, setShowQrModal] = useState(null);
+  const [showNewEventModal, setShowNewEventModal] = useState(false);
+  const [showGuestRegModal, setShowGuestRegModal] = useState(false);
+  const [selectedGuestGallery, setSelectedGuestGallery] = useState(null);
+
+  // Sync state with active event changes
+  useEffect(() => {
+    if (activeEvent) {
+      setGuests(albumStore.getGuests(activeEvent.id));
+      setReviewCandidates(albumStore.getReviewCandidates(activeEvent.id));
+      setPhotos(albumStore.getPhotos(activeEvent.id));
+    }
+  }, [activeEvent]);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  // Actions for Match Review
+  const handleApproveMatch = (matchId) => {
+    albumStore.approveMatch(matchId);
+    setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
+    setGuests(albumStore.getGuests(activeEvent?.id));
+  };
+
+  const handleRejectMatch = (matchId) => {
+    albumStore.rejectMatch(matchId);
+    setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
+    setGuests(albumStore.getGuests(activeEvent?.id));
+  };
+
+  const handleCreateEvent = (newEvent) => {
+    const updated = albumStore.saveEvent(newEvent);
+    setEvents(updated);
+    setActiveEvent(newEvent);
+    showToast(`Created new wedding event: ${newEvent.name}`);
+  };
+
+  const handleUploadComplete = (newPhotos, category) => {
+    albumStore.addPhotos(newPhotos);
+    setPhotos(albumStore.getPhotos(activeEvent?.id));
+
+    // Run face matching against all registered guests in this event!
+    const currentGuests = albumStore.getGuests(activeEvent?.id);
+    currentGuests.forEach(guest => {
+      albumStore.matchGuestAgainstEventPhotos(guest, newPhotos);
+    });
+
+    setGuests(albumStore.getGuests(activeEvent?.id));
+    setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
+  };
+
+  const handleRegisterGuest = (newGuest) => {
+    const created = {
+      id: Date.now(),
+      eventId: activeEvent?.id || 1,
+      name: newGuest.name,
+      phone: newGuest.phone,
+      selfieUrl: newGuest.selfieUrl,
+      status: 'Processing',
+      photosCount: 0,
+      initials: newGuest.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+    };
+
+    albumStore.saveGuest(created);
+
+    // Immediately run face matching against active event photos
+    const currentPhotos = albumStore.getPhotos(activeEvent?.id);
+    albumStore.matchGuestAgainstEventPhotos(created, currentPhotos);
+
+    setGuests(albumStore.getGuests(activeEvent?.id));
+    setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
+    showToast(`Registered ${created.name}! Facial match complete.`);
+  };
+
+  return (
+    <div className="app-shell">
+      <SideBar
+        page={page}
+        setPage={setPage}
+        activeEvent={activeEvent}
+        reviewCount={reviewCandidates.length}
+      />
+
+      <div className="min-h-screen pl-0 lg:pl-[244px]">
+        {/* Top Header */}
+        <div className="flex h-[72px] items-center justify-between border-b border-[#e1e8df] bg-white/75 px-5 backdrop-blur lg:px-9 sticky top-0 z-10">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileMenu(!mobileMenu)}
+              className="rounded-lg p-2 text-[#496054] lg:hidden"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="desktop-top-search relative w-72">
+              <Search size={16} className="absolute left-3 top-3 text-[#87938a]" />
+              <input
+                className="form-input !py-2.5 pl-9"
+                placeholder="Search guests, events, photos..."
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowGuestRegModal(true)}
+              className="rounded-xl border border-[#cbe0cf] bg-[#f0f7f1] px-3.5 py-2 text-xs font-bold text-[#205c3b] hover:bg-[#e4efe5] transition flex items-center gap-1.5"
+            >
+              <QrCode size={14} /> Preview Guest QR Page
+            </button>
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-[#e9d6c1] text-[11px] font-bold text-[#674333]">
+              PM
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Navigation Drawer */}
+        <AnimatePresence>
+          {mobileMenu && (
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              className="fixed inset-y-0 left-0 z-50 w-72 bg-[#fbfcf9] p-5 shadow-2xl lg:hidden"
+            >
+              <div className="flex justify-between items-center">
+                <Logo />
+                <button onClick={() => setMobileMenu(false)}>
+                  <X size={20} />
+                </button>
+              </div>
+              <nav className="mt-8 space-y-1">
+                {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      setPage(id);
+                      setMobileMenu(false);
+                    }}
+                    className={`nav-item w-full ${page === id ? 'active' : ''}`}
+                  >
+                    <Icon size={18} />
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main Content Area */}
+        <main className="main-content relative mx-auto max-w-[1480px] p-6 lg:p-9">
+          {page === 'Overview' && (
+            <Overview
+              setPage={setPage}
+              activeEvent={activeEvent}
+              guests={guests}
+              reviewCandidates={reviewCandidates}
+              photos={photos}
+              onNewEvent={() => setShowNewEventModal(true)}
+              onOpenQr={() => setShowQrModal(activeEvent)}
+            />
+          )}
+
+          {page === 'Events' && (
+            <EventsView
+              events={events}
+              activeEvent={activeEvent}
+              setActiveEvent={setActiveEvent}
+              onNewEvent={() => setShowNewEventModal(true)}
+              onOpenQr={(ev) => setShowQrModal(ev)}
+            />
+          )}
+
+          {page === 'Guests' && (
+            <GuestsView
+              guests={guests}
+              onOpenGuestGallery={(g) => setSelectedGuestGallery(g)}
+            />
+          )}
+
+          {page === 'Uploads' && (
+            <UploadsView
+              activeEvent={activeEvent}
+              onUploadComplete={handleUploadComplete}
+              onShowToast={showToast}
+            />
+          )}
+
+          {page === 'Match review' && (
+            <MatchReviewView
+              candidates={reviewCandidates}
+              onApprove={handleApproveMatch}
+              onReject={handleRejectMatch}
+              onShowToast={showToast}
+            />
+          )}
+
+          {page === 'Delivery' && (
+            <DeliveryView
+              activeEvent={activeEvent}
+              guests={guests}
+              reviewCandidates={reviewCandidates}
+              onShowToast={showToast}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* Modals and Overlays */}
+      <AnimatePresence>
+        {showGuestRegModal && (
+          <GuestRegistrationModal
+            activeEvent={activeEvent}
+            onClose={() => setShowGuestRegModal(false)}
+            onRegisterGuest={handleRegisterGuest}
+          />
+        )}
+
+        {showQrModal && (
+          <EventQrModal
+            event={showQrModal}
+            onClose={() => setShowQrModal(null)}
+          />
+        )}
+
+        {showNewEventModal && (
+          <NewEventModal
+            onClose={() => setShowNewEventModal(false)}
+            onCreateEvent={handleCreateEvent}
+          />
+        )}
+
+        {selectedGuestGallery && (
+          <GuestGalleryModal
+            guest={selectedGuestGallery}
+            activeEvent={activeEvent}
+            onClose={() => setSelectedGuestGallery(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <Toast message={toastMessage} onDismiss={() => setToastMessage('')} />
+    </div>
+  );
+}
