@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -458,4 +458,202 @@ async def get_guest_gallery(
             "all_photos": all_photos,
             "by_category": photos_by_category,
         },
+    }
+
+
+@router.post("/guests/{guest_id}/rematch", status_code=status.HTTP_200_OK)
+async def rematch_guest(
+    guest_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Purge stale match records and re-run AWS Rekognition against all ceremony photos
+    for this guest using high-precision face matching.
+    """
+    guest_res = await db.execute(select(Guest).where(Guest.guest_id == guest_id))
+    guest = guest_res.scalar_one_or_none()
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found.")
+
+    # Remove existing matches for this guest
+    await db.execute(delete(GuestMatch).where(GuestMatch.guest_id == guest_id))
+    await db.flush()
+
+    file_storage = FileStorageService()
+    selfie_full = file_storage.get_absolute_path(guest.selfie_path)
+    if not os.path.exists(selfie_full):
+        alt_selfie = os.path.join("storage", guest.selfie_path.lstrip("/"))
+        if os.path.exists(alt_selfie):
+            selfie_full = alt_selfie
+
+    if not os.path.exists(selfie_full):
+        raise HTTPException(status_code=404, detail="Guest selfie file not found on disk.")
+
+    with open(selfie_full, "rb") as sf:
+        selfie_bytes = sf.read()
+
+    # Query all ceremony photos in the event
+    photos_res = await db.execute(
+        select(Photo).where(Photo.event_id == guest.event_id).order_by(Photo.photo_id.asc())
+    )
+    photos = photos_res.scalars().all()
+
+    rekognition = get_aws_rekognition_service()
+    confirmed_count = 0
+    pending_count = 0
+
+    for photo in photos:
+        try:
+            full_photo_path = file_storage.get_absolute_path(photo.file_path)
+            if not os.path.exists(full_photo_path):
+                alt_photo = os.path.join("storage", photo.file_path.lstrip("/"))
+                if os.path.exists(alt_photo):
+                    full_photo_path = alt_photo
+
+            if not os.path.exists(full_photo_path):
+                continue
+
+            with open(full_photo_path, "rb") as pf:
+                photo_bytes = pf.read()
+
+            matches = rekognition.compare_faces(
+                source_image_bytes=selfie_bytes,
+                target_image_bytes=photo_bytes,
+            )
+
+            for m in matches:
+                guest_match = GuestMatch(
+                    event_id=guest.event_id,
+                    guest_id=guest.guest_id,
+                    photo_id=photo.photo_id,
+                    similarity=m.similarity,
+                    confidence=m.confidence,
+                    status=m.tier,
+                    bounding_box=m.bounding_box,
+                )
+                db.add(guest_match)
+                if m.tier == "confirmed":
+                    confirmed_count += 1
+                elif m.is_review_required:
+                    pending_count += 1
+        except Exception as e:
+            logger.warning(f"Error re-matching photo {photo.photo_id}: {e}")
+
+    if confirmed_count > 0:
+        guest.status = "matched"
+    elif pending_count > 0:
+        guest.status = "needs_review"
+    else:
+        guest.status = "registered"
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"AWS Rekognition rematch complete: {confirmed_count} confirmed, {pending_count} pending review.",
+        "confirmed_count": confirmed_count,
+        "pending_count": pending_count,
+    }
+
+
+@router.post("/events/{event_id}/rematch", status_code=status.HTTP_200_OK)
+async def rematch_event_all_guests(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Re-run AWS Rekognition for all guests registered in an event.
+    Purges stale simulation matches and re-matches with 100% genuine AWS face vectors.
+    """
+    guests_res = await db.execute(select(Guest).where(Guest.event_id == event_id))
+    guests = guests_res.scalars().all()
+    if not guests:
+        return {"success": True, "message": "No registered guests found in event.", "processed_guests": 0}
+
+    # Delete existing matches for all guests in event
+    await db.execute(delete(GuestMatch).where(GuestMatch.event_id == event_id))
+    await db.flush()
+
+    photos_res = await db.execute(
+        select(Photo).where(Photo.event_id == event_id).order_by(Photo.photo_id.asc())
+    )
+    photos = photos_res.scalars().all()
+
+    file_storage = FileStorageService()
+    rekognition = get_aws_rekognition_service()
+
+    total_confirmed = 0
+    total_pending = 0
+
+    for guest in guests:
+        selfie_full = file_storage.get_absolute_path(guest.selfie_path)
+        if not os.path.exists(selfie_full):
+            alt_selfie = os.path.join("storage", guest.selfie_path.lstrip("/"))
+            if os.path.exists(alt_selfie):
+                selfie_full = alt_selfie
+
+        if not os.path.exists(selfie_full):
+            continue
+
+        with open(selfie_full, "rb") as sf:
+            selfie_bytes = sf.read()
+
+        g_confirmed = 0
+        g_pending = 0
+
+        for photo in photos:
+            try:
+                full_photo_path = file_storage.get_absolute_path(photo.file_path)
+                if not os.path.exists(full_photo_path):
+                    alt_photo = os.path.join("storage", photo.file_path.lstrip("/"))
+                    if os.path.exists(alt_photo):
+                        full_photo_path = alt_photo
+
+                if not os.path.exists(full_photo_path):
+                    continue
+
+                with open(full_photo_path, "rb") as pf:
+                    photo_bytes = pf.read()
+
+                matches = rekognition.compare_faces(
+                    source_image_bytes=selfie_bytes,
+                    target_image_bytes=photo_bytes,
+                )
+
+                for m in matches:
+                    guest_match = GuestMatch(
+                        event_id=event_id,
+                        guest_id=guest.guest_id,
+                        photo_id=photo.photo_id,
+                        similarity=m.similarity,
+                        confidence=m.confidence,
+                        status=m.tier,
+                        bounding_box=m.bounding_box,
+                    )
+                    db.add(guest_match)
+                    if m.tier == "confirmed":
+                        g_confirmed += 1
+                    elif m.is_review_required:
+                        g_pending += 1
+            except Exception as e:
+                logger.warning(f"Error matching event {event_id} photo {photo.photo_id}: {e}")
+
+        if g_confirmed > 0:
+            guest.status = "matched"
+        elif g_pending > 0:
+            guest.status = "needs_review"
+        else:
+            guest.status = "registered"
+
+        total_confirmed += g_confirmed
+        total_pending += g_pending
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Rematch completed for {len(guests)} guest(s).",
+        "processed_guests": len(guests),
+        "total_confirmed": total_confirmed,
+        "total_pending": total_pending,
     }

@@ -82,6 +82,10 @@ export const guestsAPI = {
   },
   actionMatch: (matchId, action) =>
     api.post(`/api/matches/${matchId}/action`, { action }),
+  rematchGuest: (guestId) =>
+    api.post(`/api/guests/${guestId}/rematch`),
+  rematchEvent: (eventId) =>
+    api.post(`/api/events/${eventId}/rematch`),
 };
 
 export default api;

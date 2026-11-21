@@ -1321,8 +1321,34 @@ function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false })
   const [activeCategory, setActiveCategory] = useState('All');
   const [backendPhotos, setBackendPhotos] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRematching, setIsRematching] = useState(false);
 
   const guestId = guest?.guest_id || guest?.id;
+
+  const handleRematch = async () => {
+    if (!guestId || isRematching) return;
+    setIsRematching(true);
+    try {
+      await guestsAPI.rematchGuest(guestId);
+      const res = await galleryAPI.getGuestGallery(guestId);
+      if (res.data?.success && res.data?.data) {
+        const rawPhotos = res.data.data.photos || res.data.data.all_photos || [];
+        if (Array.isArray(rawPhotos)) {
+          const list = rawPhotos.map(p => ({
+            id: p.photo_id,
+            url: mediaUrl(p.file_path),
+            category: p.category || 'Ceremony',
+            similarity: p.similarity || 90,
+          }));
+          setBackendPhotos(list);
+        }
+      }
+    } catch (err) {
+      console.error('Rematch error:', err);
+    } finally {
+      setIsRematching(false);
+    }
+  };
 
   useEffect(() => {
     if (!guestId) {
@@ -1377,6 +1403,14 @@ function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false })
             <p className="mt-2 text-sm text-[#d4e5da]">
               Curated photos for <b>{guest.name}</b> ({confirmedPhotos.length} photos) · {activeEvent?.place}
             </p>
+            <button
+              onClick={handleRematch}
+              disabled={isRematching}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-white/20 px-3.5 py-1.5 text-xs font-bold text-white backdrop-blur hover:bg-white hover:text-[#205c3b] transition disabled:opacity-50"
+            >
+              <Sparkles size={13} className={isRematching ? 'animate-spin' : ''} />
+              {isRematching ? 'Analyzing faces with AWS Rekognition...' : 'Re-scan with AWS AI'}
+            </button>
           </div>
           <div className="absolute right-6 top-4 h-36 w-36 rounded-full border-[18px] border-[#d8eab6]/15" />
         </div>

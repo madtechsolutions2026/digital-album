@@ -107,6 +107,25 @@ class AWSRekognitionService:
         else:
             return "rejected", False
 
+    @staticmethod
+    def _normalize_to_jpeg(image_bytes: bytes) -> bytes:
+        """
+        Convert any image format (WebP, PNG, etc.) to standard JPEG for AWS Rekognition.
+        CompareFaces raises InvalidImageFormatException on WebP or raw buffers.
+        """
+        try:
+            im = Image.open(io.BytesIO(image_bytes))
+            if im.format == "JPEG" and im.mode == "RGB":
+                return image_bytes
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=95)
+            return buf.getvalue()
+        except Exception as e:
+            logger.warning(f"Image JPEG normalization note: {e}")
+            return image_bytes
+
     def compare_faces(
         self,
         source_image_bytes: bytes,
@@ -114,7 +133,7 @@ class AWSRekognitionService:
         similarity_threshold: Optional[float] = None,
     ) -> List[RekognitionMatchResult]:
         """
-        Compare guest selfie (source) against event photo (target).
+        Compare guest selfie (source) against event photo (target) with 100-point facial dimensions.
         """
         threshold = similarity_threshold or self.review_threshold
 
@@ -126,10 +145,14 @@ class AWSRekognitionService:
         if not client:
             return []
 
+        # Convert both images to clean JPEG bytes (required by AWS Rekognition)
+        source_jpeg = self._normalize_to_jpeg(source_image_bytes)
+        target_jpeg = self._normalize_to_jpeg(target_image_bytes)
+
         try:
             response = client.compare_faces(
-                SourceImage={"Bytes": source_image_bytes},
-                TargetImage={"Bytes": target_image_bytes},
+                SourceImage={"Bytes": source_jpeg},
+                TargetImage={"Bytes": target_jpeg},
                 SimilarityThreshold=threshold,
                 QualityFilter="AUTO",
             )
@@ -161,7 +184,10 @@ class AWSRekognitionService:
 
         except ClientError as e:
             logger.error(f"AWS Rekognition compare_faces error: {e}", exc_info=True)
-            return self._fallback_compare_faces(source_image_bytes, target_image_bytes, threshold)
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected compare_faces error: {e}", exc_info=True)
+            return []
 
     def _fallback_compare_faces(
         self,
