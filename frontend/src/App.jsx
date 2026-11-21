@@ -116,12 +116,12 @@ function SideBar({ page, setPage, activeEvent, reviewCount }) {
       </div>
 
       <div className="mt-5 flex items-center gap-2 border-t border-[#e2e9e0] pt-4">
-        <div className="grid h-8 w-8 place-items-center rounded-full bg-[#e9d6c1] text-[11px] font-bold text-[#674333]">
-          PM
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-[#d7ebd9] text-[11px] font-bold text-[#1f5c3a]">
+          SS
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold truncate">Pavithra M.</p>
-          <p className="text-[10px] text-[#829087]">Studio owner</p>
+          <p className="text-xs font-bold truncate">Shoot at Sight</p>
+          <p className="text-[10px] text-[#829087]">Wedding Studio</p>
         </div>
       </div>
     </aside>
@@ -2092,8 +2092,8 @@ export default function App() {
             >
               <QrCode size={14} /> Preview Guest QR Page
             </button>
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-[#e9d6c1] text-[11px] font-bold text-[#674333]">
-              PM
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-[#d7ebd9] text-[11px] font-bold text-[#1f5c3a]" title="Shoot at Sight Studio">
+              SS
             </div>
           </div>
         </div>

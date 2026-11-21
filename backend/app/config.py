@@ -181,6 +181,16 @@ class Settings(BaseSettings):
         default="dev-only-insecure-secret-change-me",
         description="Secret used to sign gallery access tokens (event code/password login)"
     )
+
+    # Studio administration credentials
+    ADMIN_USERNAME: str = Field(
+        default="shootatsight",
+        description="Studio administrator username"
+    )
+    ADMIN_PASSWORD: str = Field(
+        default="123456",
+        description="Studio administrator password"
+    )
     
     # Logging configuration
     LOG_LEVEL: str = Field(

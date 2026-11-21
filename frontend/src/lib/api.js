@@ -47,6 +47,7 @@ export const eventsAPI = {
   getById: (id) => api.get(`/api/events/${id}`),
   getFolders: (id) => api.get(`/api/events/${id}/folders`),
   delete: (id) => api.delete(`/api/events/${id}`),
+  purgeAll: () => api.post('/api/events/purge-all-data'),
 };
 
 export const galleryAPI = {

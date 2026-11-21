@@ -457,3 +457,42 @@ async def get_event_folders(
             "folders": list(folders_map.values()),
         }
     }
+
+
+@router.post(
+    "/purge-all-data",
+    status_code=status.HTTP_200_OK,
+    summary="Purge all events and data",
+    description="Deletes all events, guests, photos, face embeddings, and matches for a clean system reset."
+)
+async def purge_all_data(db: AsyncSession = Depends(get_db)):
+    """Wipes all events, photos, face embeddings, guests, and matches cleanly."""
+    from app.models.guest_match import GuestMatch
+    from app.models.guest import Guest
+    from app.models.face_embedding import FaceEmbedding
+    from app.models.photo import Photo
+    from app.models.event import Event
+    from app.services.cache import events_list_cache, event_photos_cache
+    from sqlalchemy import delete
+
+    # Delete all rows in order of dependency
+    await db.execute(delete(GuestMatch))
+    await db.execute(delete(Guest))
+    await db.execute(delete(FaceEmbedding))
+    await db.execute(delete(Photo))
+    await db.execute(delete(Event))
+    await db.commit()
+
+    events_list_cache.invalidate("all")
+    event_photos_cache.invalidate("all")
+
+    logger.info("Admin purged all data: events, guests, photos, face embeddings, and matches.")
+    return {
+        "success": True,
+        "message": "All database records have been completely purged.",
+        "data": {
+            "events_remaining": 0,
+            "guests_remaining": 0,
+            "photos_remaining": 0
+        }
+    }

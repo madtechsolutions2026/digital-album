@@ -128,10 +128,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
-    # Keep compatibility with the existing Railway credentials while the
-    # photographer studio credentials are migrated to their product names.
-    studio_username = os.environ.get("ADMIN_USERNAME") or os.environ.get("DEMO_USERNAME") or "photographer"
-    studio_password = os.environ.get("ADMIN_PASSWORD") or os.environ.get("DEMO_PASSWORD", "")
+    # Studio authentication credentials (defaults to Shoot at Sight studio)
+    studio_username = os.environ.get("ADMIN_USERNAME") or os.environ.get("DEMO_USERNAME") or "shootatsight"
+    studio_password = os.environ.get("ADMIN_PASSWORD") or os.environ.get("DEMO_PASSWORD") or "123456"
     app.add_middleware(
         PhotographerAccessMiddleware,
         username=studio_username,
