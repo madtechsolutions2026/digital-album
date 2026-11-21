@@ -5,7 +5,7 @@
  * All events, guests, ceremony photos, and match reviews are 100% real user data.
  */
 
-const DB_PREFIX = 'dg_album_clean_v4_';
+const DB_PREFIX = 'dg_album_prod_v5_';
 
 class AlbumStore {
   constructor() {
@@ -29,6 +29,10 @@ class AlbumStore {
         'dg_album_clean_v3_guests',
         'dg_album_clean_v3_photos',
         'dg_album_clean_v3_matches',
+        'dg_album_clean_v4_events',
+        'dg_album_clean_v4_guests',
+        'dg_album_clean_v4_photos',
+        'dg_album_clean_v4_matches',
       ];
       legacyKeys.forEach(k => localStorage.removeItem(k));
     } catch {
