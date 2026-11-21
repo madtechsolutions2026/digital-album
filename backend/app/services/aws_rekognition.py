@@ -12,6 +12,7 @@ Provides production-ready, commercially licensed face matching with:
 """
 
 import io
+import os
 import logging
 from typing import Dict, List, Optional, Tuple, Any
 import boto3
