@@ -34,8 +34,9 @@ class MatchActionRequest(BaseModel):
 async def register_guest(
     name: Annotated[str, Form(description="Guest full name")],
     phone: Annotated[str, Form(description="Guest WhatsApp phone number")],
-    event_id: Annotated[int, Form(description="Event ID")],
     selfie: Annotated[UploadFile, File(description="Selfie image")],
+    event_id: Annotated[Optional[int], Form(description="Event ID")] = None,
+    event_code: Annotated[Optional[str], Form(description="Event access code (e.g. MADH2026)")] = None,
     consent: Annotated[bool, Form(description="Consent agreement")] = True,
     db: AsyncSession = Depends(get_db),
 ):
@@ -46,11 +47,38 @@ async def register_guest(
     if not consent:
         raise HTTPException(status_code=400, detail="Consent is required to register for photos.")
 
-    # Verify event exists
-    event_res = await db.execute(select(Event).where(Event.event_id == event_id))
-    event = event_res.scalar_one_or_none()
+    # Resolve Event by code or ID
+    event = None
+    if event_code:
+        clean_code = event_code.strip().upper()
+        event_res = await db.execute(select(Event).where(func.upper(Event.access_code) == clean_code))
+        event = event_res.scalar_one_or_none()
+
+    if not event and event_id:
+        try:
+            event_res = await db.execute(select(Event).where(Event.event_id == int(event_id)))
+            event = event_res.scalar_one_or_none()
+        except (ValueError, TypeError):
+            pass
+
     if not event:
-        raise HTTPException(status_code=404, detail="Event not found.")
+        # Create event automatically if not in database yet (e.g. MADH2026)
+        clean_code = (event_code or "MADH2026").strip().upper()
+        event_name = clean_code.replace("2026", "").capitalize() if "2026" in clean_code else clean_code
+        if not event_name:
+            event_name = "Wedding Celebration"
+        from datetime import date
+        event = Event(
+            name=event_name,
+            event_date=date.today(),
+            access_code=clean_code,
+            password_hash="system_created",
+        )
+        db.add(event)
+        await db.commit()
+        await db.refresh(event)
+
+    resolved_event_id = event.event_id
 
     # Read selfie bytes
     selfie_bytes = await selfie.read()
@@ -63,12 +91,12 @@ async def register_guest(
     selfie_path = file_storage.save_file(
         file_content=selfie_bytes,
         extension=selfie_ext,
-        subdirectory=f"selfies/event_{event_id}",
+        subdirectory=f"selfies/event_{resolved_event_id}",
     )
 
     # Create Guest record
     guest = Guest(
-        event_id=event_id,
+        event_id=resolved_event_id,
         name=name.strip(),
         phone=phone.strip(),
         selfie_path=selfie_path,
@@ -79,7 +107,7 @@ async def register_guest(
 
     # Find existing photos in this event to run face matching
     photos_res = await db.execute(
-        select(Photo).where(Photo.event_id == event_id).order_by(Photo.photo_id.desc())
+        select(Photo).where(Photo.event_id == resolved_event_id).order_by(Photo.photo_id.desc())
     )
     photos = photos_res.scalars().all()
 
@@ -103,7 +131,7 @@ async def register_guest(
 
             for m in matches:
                 guest_match = GuestMatch(
-                    event_id=event_id,
+                    event_id=resolved_event_id,
                     guest_id=guest.guest_id,
                     photo_id=photo.photo_id,
                     similarity=m.similarity,
@@ -136,10 +164,14 @@ async def register_guest(
         "message": "Registration successful. Photos matched.",
         "data": {
             "guest_id": guest.guest_id,
+            "id": guest.guest_id,
+            "eventId": guest.event_id,
             "name": guest.name,
             "phone": guest.phone,
             "status": guest.status,
             "selfie_path": guest.selfie_path,
+            "selfieUrl": guest.selfie_path,
+            "matchedCount": confirmed_count,
             "confirmed_matches": confirmed_count,
             "needs_review": has_pending,
         },
@@ -179,13 +211,18 @@ async def list_guests(
         pend_count = pending_res.scalar_one() or 0
 
         data.append({
+            "id": g.guest_id,
             "guest_id": g.guest_id,
+            "eventId": g.event_id,
             "event_id": g.event_id,
             "name": g.name,
             "phone": g.phone,
             "status": g.status,
             "selfie_path": g.selfie_path,
+            "selfieUrl": g.selfie_path,
             "created_at": g.created_at.isoformat(),
+            "timestamp": g.created_at.isoformat(),
+            "matchedCount": conf_count,
             "photos_count": conf_count,
             "pending_review_count": pend_count,
         })
@@ -219,9 +256,33 @@ async def get_matches_for_review(
     res = await db.execute(query)
     rows = res.all()
 
-    # Group by guest
+    # Group by guest and generate flat candidate list
     guest_groups = {}
+    flat_candidates = []
     for match, guest, photo in rows:
+        cat = "Ceremony"
+        if photo.photo_metadata and isinstance(photo.photo_metadata, dict):
+            cat = photo.photo_metadata.get("category", "Ceremony")
+
+        flat_candidates.append({
+            "matchId": match.match_id,
+            "match_id": match.match_id,
+            "guestId": guest.guest_id,
+            "guest_id": guest.guest_id,
+            "guestName": guest.name,
+            "name": guest.name,
+            "phone": guest.phone,
+            "selfieUrl": guest.selfie_path,
+            "selfie_path": guest.selfie_path,
+            "photoId": photo.photo_id,
+            "photo_id": photo.photo_id,
+            "photoUrl": photo.file_path,
+            "file_path": photo.file_path,
+            "category": cat,
+            "similarity": match.similarity,
+            "confidence": match.confidence,
+        })
+
         if guest.guest_id not in guest_groups:
             guest_groups[guest.guest_id] = {
                 "guest_id": guest.guest_id,
@@ -242,7 +303,8 @@ async def get_matches_for_review(
 
     return {
         "success": True,
-        "data": list(guest_groups.values()),
+        "data": flat_candidates,
+        "guests": list(guest_groups.values()),
         "total_guests": len(guest_groups),
         "total_pending_matches": len(rows),
     }
