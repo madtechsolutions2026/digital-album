@@ -11,7 +11,7 @@ const api = axios.create({
 });
 
 export function mediaUrl(value) {
-  if (!value || /^(https?:|data:|blob:)/i.test(value)) return value;
+  if (!value || typeof value !== 'string' || /^(https?:|data:|blob:)/i.test(value)) return value;
   const relative = value.replace(/^\/+/, '').replace(/^storage\//, '');
   return `${API_BASE_URL}/storage/${relative}`;
 }
@@ -20,7 +20,7 @@ function resolveMedia(data) {
   if (!data || typeof data !== 'object') return data;
   if (Array.isArray(data)) return data.map(resolveMedia);
   for (const [key, value] of Object.entries(data)) {
-    if ((key === 'file_path' || key === 'cover_photo' || key === 'selfie_path') && typeof value === 'string') {
+    if ((key === 'file_path' || key === 'cover_photo' || key === 'selfie_path' || key === 'selfieUrl' || key === 'photoUrl') && typeof value === 'string') {
       data[key] = mediaUrl(value);
     } else if (value && typeof value === 'object') {
       data[key] = resolveMedia(value);

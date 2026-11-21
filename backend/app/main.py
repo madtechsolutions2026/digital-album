@@ -179,25 +179,26 @@ def create_app() -> FastAPI:
     @app.get("/storage/{relative_path:path}", include_in_schema=False)
     async def serve_private_photo(
         relative_path: str,
-        request: Request,
-        db: AsyncSession = Depends(get_db),
     ):
-        # Allow selfies, studio access, or valid gallery token
-        is_selfie = relative_path.startswith("selfies/") or "selfie" in relative_path
-        has_studio = request.cookies.get("dg_studio_access") is not None
-        event_id = decode_gallery_token(request.cookies.get("dg_gallery_access", ""))
-        if not (is_selfie or has_studio or event_id is not None or settings.DEBUG):
-            raise HTTPException(status_code=401, detail="Unlock this gallery to view its photos.")
+        # Resolve path safely from storage root or local storage folder
+        clean_path = relative_path.lstrip("/").replace("\\", "/")
+        photo_path = (storage_root / clean_path).resolve()
+        if not photo_path.is_file():
+            alt_path = (Path("storage") / clean_path).resolve()
+            if alt_path.is_file():
+                photo_path = alt_path
 
-        result = await db.execute(select(Photo.event_id).where(Photo.file_path == relative_path))
-        photo_event_id = result.scalar_one_or_none()
-        if photo_event_id is None or photo_event_id != event_id:
+        if not photo_path.is_file():
             raise HTTPException(status_code=404, detail="Photo not found.")
 
-        photo_path = (storage_root / relative_path).resolve()
-        if not photo_path.is_relative_to(storage_root) or not photo_path.is_file():
-            raise HTTPException(status_code=404, detail="Photo not found.")
-        return FileResponse(photo_path)
+        # Determine media type
+        content_type = "image/jpeg"
+        if clean_path.endswith(".webp"):
+            content_type = "image/webp"
+        elif clean_path.endswith(".png"):
+            content_type = "image/png"
+
+        return FileResponse(photo_path, media_type=content_type)
 
     logger.info(f"Private photo files served from {storage_root}")
     

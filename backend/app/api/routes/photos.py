@@ -151,6 +151,51 @@ async def upload_photo(
     # Commit transaction
     await db.commit()
 
+    # Run AWS Rekognition comparison against all registered guests in this event
+    try:
+        from app.models.guest import Guest
+        from app.models.guest_match import GuestMatch
+        from app.services.aws_rekognition import get_aws_rekognition_service
+        from sqlalchemy import select
+        import os
+
+        guests_res = await db.execute(select(Guest).where(Guest.event_id == event_id))
+        event_guests = guests_res.scalars().all()
+        if event_guests:
+            rekognition = get_aws_rekognition_service()
+            for guest in event_guests:
+                try:
+                    selfie_full = photo_service.file_storage.get_absolute_path(guest.selfie_path)
+                    if not os.path.exists(selfie_full):
+                        continue
+                    with open(selfie_full, "rb") as sf:
+                        selfie_bytes = sf.read()
+
+                    matches = rekognition.compare_faces(
+                        source_image_bytes=selfie_bytes,
+                        target_image_bytes=file_content,
+                    )
+                    for m in matches:
+                        guest_match = GuestMatch(
+                            event_id=event_id,
+                            guest_id=guest.guest_id,
+                            photo_id=result.photo_id,
+                            similarity=m.similarity,
+                            confidence=m.confidence,
+                            status=m.tier,
+                            bounding_box=m.bounding_box,
+                        )
+                        db.add(guest_match)
+                        if m.tier == "confirmed":
+                            guest.status = "matched"
+                        elif m.is_review_required and guest.status != "matched":
+                            guest.status = "needs_review"
+                except Exception as match_err:
+                    logger.warning(f"Error matching photo {result.photo_id} with guest {guest.guest_id}: {match_err}")
+            await db.commit()
+    except Exception as bg_err:
+        logger.warning(f"Background face indexing note: {bg_err}")
+
     from app.services.cache import events_list_cache, event_photos_cache
     events_list_cache.invalidate("all")
     event_photos_cache.invalidate(str(event_id))

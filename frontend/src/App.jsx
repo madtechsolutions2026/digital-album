@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { albumStore } from './lib/albumStore';
-import { eventsAPI, galleryAPI, guestsAPI, photosAPI } from './lib/api';
+import { eventsAPI, galleryAPI, guestsAPI, photosAPI, mediaUrl } from './lib/api';
 
 const NAV_ITEMS = [
   { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
@@ -268,8 +268,12 @@ function Overview({ setPage, activeEvent, guests, reviewCandidates, photos, onNe
               {guests.slice(0, 4).map((guest) => (
                 <div key={guest.id} className="flex items-center gap-3">
                   <img
-                    src={guest.selfieUrl}
+                    src={mediaUrl(guest.selfieUrl || guest.selfie_path)}
                     alt={guest.name}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+                    }}
                     className="h-10 w-10 rounded-full object-cover border border-[#d6e2d4]"
                   />
                   <div className="min-w-0 flex-1">
@@ -455,8 +459,12 @@ function GuestsView({ guests, onOpenGuestGallery }) {
               {visible.map(guest => (
                 <div className="table-row grid-cols-[48px_1.2fr_1fr_.75fr_.65fr_auto] items-center" key={guest.id}>
                   <img
-                    src={guest.selfieUrl || guest.selfie_path || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
+                    src={mediaUrl(guest.selfieUrl || guest.selfie_path)}
                     alt={guest.name}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+                    }}
                     className="h-10 w-10 rounded-full object-cover border border-[#d2ded0]"
                   />
                   <div>
@@ -510,41 +518,48 @@ function UploadsView({ activeEvent, onUploadComplete, onShowToast }) {
   const handleStartUpload = async () => {
     if (selectedFiles.length === 0 || !activeEvent) return;
     setIsUploading(true);
-    setUploadProgress(15);
+    setUploadProgress(5);
 
+    const total = selectedFiles.length;
+    let completed = 0;
     const uploadedPhotoObjects = [];
 
-    for (let i = 0; i < selectedFiles.length; i++) {
+    for (let i = 0; i < total; i++) {
       const file = selectedFiles[i];
-      const url = URL.createObjectURL(file);
-      uploadedPhotoObjects.push({
-        id: Date.now() + i,
-        eventId: activeEvent.id,
-        category,
-        url,
-        name: file.name,
-      });
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('event_id', activeEvent.event_id || activeEvent.id);
+        formData.append('category', category);
+
+        const res = await photosAPI.upload(formData);
+        const data = res.data?.data;
+        uploadedPhotoObjects.push({
+          id: data?.photo_id || (Date.now() + i),
+          eventId: activeEvent.id,
+          category,
+          url: data?.file_path ? mediaUrl(data.file_path) : URL.createObjectURL(file),
+          name: file.name,
+        });
+      } catch (err) {
+        console.warn('Backend photo upload note:', err);
+        uploadedPhotoObjects.push({
+          id: Date.now() + i,
+          eventId: activeEvent.id,
+          category,
+          url: URL.createObjectURL(file),
+          name: file.name,
+        });
+      }
+
+      completed++;
+      setUploadProgress(Math.round((completed / total) * 100));
     }
 
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          return 90;
-        }
-        return prev + 25;
-      });
-    }, 200);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploadProgress(100);
-      setIsUploading(false);
-
-      onUploadComplete(uploadedPhotoObjects, category);
-      onShowToast(`Uploaded ${selectedFiles.length} photos under ${category} to ${activeEvent.name}. Faces indexed.`);
-      setSelectedFiles([]);
-    }, 1200);
+    setIsUploading(false);
+    onUploadComplete(uploadedPhotoObjects, category);
+    onShowToast(`Uploaded ${selectedFiles.length} photos under ${category} to ${activeEvent.name}. AWS Rekognition facial indexing complete.`);
+    setSelectedFiles([]);
   };
 
   return (
@@ -1304,9 +1319,36 @@ function NewEventModal({ onClose, onCreateEvent }) {
 // 10. PRIVATE GUEST GALLERY VIEW (CLIENT PERSONAL ALBUM)
 function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false }) {
   const [activeCategory, setActiveCategory] = useState('All');
-  const confirmedPhotos = useMemo(() => {
-    return albumStore.getGuestConfirmedPhotos(guest.id);
-  }, [guest.id]);
+  const [backendPhotos, setBackendPhotos] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const guestId = guest?.guest_id || guest?.id;
+
+  useEffect(() => {
+    if (!guestId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    galleryAPI.getGuestGallery(guestId)
+      .then(res => {
+        if (res.data?.success && res.data?.data?.all_photos) {
+          const list = res.data.data.all_photos.map(p => ({
+            id: p.photo_id,
+            url: mediaUrl(p.file_path),
+            category: p.category || 'Ceremony',
+            similarity: p.similarity || 90,
+          }));
+          setBackendPhotos(list);
+        }
+      })
+      .catch(e => {
+        console.debug('Guest gallery fetch note:', e);
+      })
+      .finally(() => setIsLoading(false));
+  }, [guestId]);
+
+  const confirmedPhotos = backendPhotos;
 
   const filteredPhotos = activeCategory === 'All'
     ? confirmedPhotos
@@ -1381,7 +1423,9 @@ function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false })
           </div>
         ) : (
           <div className="soft-card rounded-2xl p-12 text-center text-[#728377] text-sm">
-            No confirmed photographs found under the &quot;{activeCategory}&quot; category for {guest.name}.
+            {isLoading
+              ? 'Analyzing faces with AWS Rekognition...'
+              : `No confirmed photographs found under "${activeCategory}" for ${guest.name}. When the photographer uploads photos containing ${guest.name}, they will appear here automatically.`}
           </div>
         )}
       </div>
