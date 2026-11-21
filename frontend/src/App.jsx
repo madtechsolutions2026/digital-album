@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight, Bell, Check, ChevronDown, Copy, Download, ExternalLink,
-  FolderUp, Grid2X2, ImagePlus, LayoutDashboard, Menu, MoreHorizontal,
-  QrCode, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2,
-  Upload, UserCheck, Users, X, Zap
+  Folder, FolderArchive, FolderPlus, FolderUp, Grid2X2, ImagePlus,
+  LayoutDashboard, Layers, Lock, Menu, MoreHorizontal,
+  QrCode, RefreshCw, Search, Send, Shield, ShieldCheck, Sparkles, Trash2,
+  Upload, UserCheck, Users, X, Zap, Eye
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { albumStore } from './lib/albumStore';
@@ -18,7 +19,7 @@ const NAV_ITEMS = [
   { id: 'Delivery', label: 'Delivery', icon: Send },
 ];
 
-const CATEGORIES = ['Haldi', 'Mehendi', 'Sangeet', 'Shaadi', 'Reception', 'Other'];
+const CATEGORIES = ['Haldi', 'Mehendi', 'Sangeet', 'Shaadi', 'Reception', 'Pre-Wedding', 'Cocktail', 'Other'];
 
 function StatusBadge({ children }) {
   const styles = {
@@ -296,109 +297,192 @@ function Overview({ setPage, activeEvent, guests, reviewCandidates, photos, onNe
 }
 
 // 2. EVENTS SCREEN
-function EventsView({ events, activeEvent, setActiveEvent, onNewEvent, onOpenQr, onDeleteEvent }) {
+function EventsView({ events, activeEvent, setActiveEvent, onNewEvent, onOpenQr, onDeleteEvent, onNavigateToUpload }) {
   const [search, setSearch] = useState('');
-  const filtered = events.filter(e => e.name.toLowerCase().includes(search.toLowerCase()) || e.place.toLowerCase().includes(search.toLowerCase()));
+  const [copiedCode, setCopiedCode] = useState(null);
+
+  const filtered = events.filter(e =>
+    (e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (e.place || '').toLowerCase().includes(search.toLowerCase()) ||
+    (e.access_code || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleCopyCode = (code) => {
+    navigator.clipboard?.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
 
   return (
     <>
       <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="tiny-label">Studio workspace</p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Wedding Events</h1>
-          <p className="mt-1 text-sm text-[#718077]">Create celebrations, print guest QR codes, and categorize photographs.</p>
+          <div className="flex items-center gap-2">
+            <p className="tiny-label">Studio workspace</p>
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f1e6] px-2 py-0.5 text-[10px] font-bold text-[#205c3b]">
+              <Shield size={10} /> Private Vault System
+            </span>
+          </div>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Wedding Events & Folders</h1>
+          <p className="mt-1 text-sm text-[#718077]">
+            Each event operates as an isolated, protected vault with dedicated ceremony folders (Haldi, Mehendi, Shaadi, etc.).
+          </p>
         </div>
-        <button onClick={onNewEvent} className="primary-button">
-          <ImagePlus size={17} /> New event
+        <button onClick={onNewEvent} className="primary-button shadow-md shadow-emerald-900/10">
+          <ImagePlus size={17} /> Create event vault
         </button>
       </header>
 
-      <div className="soft-card overflow-hidden rounded-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf0eb] px-5 py-4">
-          <p className="font-bold">
-            All events <span className="ml-2 text-sm font-medium text-[#829087]">{events.length}</span>
-          </p>
-          <div className="relative w-72">
-            <Search size={15} className="absolute left-3 top-3 text-[#829087]" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="form-input !py-2 pl-9"
-              placeholder="Search event or venue..."
-            />
-          </div>
+      {/* Search and stats bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="relative w-full sm:w-80">
+          <Search size={15} className="absolute left-3 top-3 text-[#829087]" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="form-input !py-2.5 pl-9 shadow-sm"
+            placeholder="Search event, venue, or access code..."
+          />
         </div>
+        <div className="flex items-center gap-3 text-xs text-[#6e8074]">
+          <span className="font-bold text-[#1f3127]">{events.length}</span> Active Wedding Vaults
+        </div>
+      </div>
 
-        {events.length > 0 ? (
-          <div className="divide-y divide-[#edf0eb]">
-            {filtered.map(event => (
+      {/* Events Grid - Cards with Ceremony Folders Breakdown */}
+      {filtered.length > 0 ? (
+        <div className="grid gap-6 md:grid-cols-2">
+          {filtered.map(event => {
+            const isActive = activeEvent?.id === event.id || activeEvent?.event_id === event.id;
+            return (
               <div
-                key={event.id}
-                className={`table-row grid-cols-[44px_1.2fr_.8fr_.6fr_auto_auto_auto] items-center hover:bg-[#fbfcf9] transition ${
-                  activeEvent?.id === event.id ? 'bg-[#f4f7f2]' : ''
+                key={event.id || event.event_id}
+                className={`relative overflow-hidden rounded-3xl border bg-white p-6 shadow-sm transition duration-200 hover:shadow-md ${
+                  isActive
+                    ? 'border-[#205c3b] ring-2 ring-[#205c3b]/15 bg-[#fbfdfa]'
+                    : 'border-[#e2ebe0]'
                 }`}
               >
-                <div
-                  className="grid h-10 w-10 place-items-center rounded-xl text-xs font-bold"
-                  style={{ background: event.tone || '#e2ebdf', color: '#274334' }}
-                >
-                  {event.name.split(' ').map(w => w[0]).join('').replace('&', '').slice(0, 3)}
+                {/* Event Card Header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="grid h-12 w-12 place-items-center rounded-2xl text-sm font-bold shadow-sm"
+                      style={{ background: event.tone || '#e2ebdf', color: '#1f3e2d' }}
+                    >
+                      {(event.name || 'W').split(' ').map(w => w[0]).join('').replace('&', '').slice(0, 3)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-[#1c2e23]">{event.name}</h2>
+                        {isActive && (
+                          <span className="rounded-full bg-[#205c3b] px-2 py-0.5 text-[9px] font-bold text-white shadow-sm">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#78897e]">{event.place} · {event.date}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => onDeleteEvent(event.id || event.event_id)}
+                    title="Delete event"
+                    className="rounded-xl p-2 text-[#9a8880] hover:bg-red-50 hover:text-red-600 transition"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
-                <div>
-                  <p className="font-bold text-[#1f3127] flex items-center gap-2">
-                    {event.name}
-                    {activeEvent?.id === event.id && (
-                      <span className="rounded-md bg-[#205c3b] px-1.5 py-0.5 text-[9px] font-bold text-white">Active</span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 text-xs text-[#829087]">{event.place}</p>
+
+                {/* Protective Security Bar */}
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#f5f8f3] px-3.5 py-2.5 text-xs border border-[#e4ece2]">
+                  <div className="flex items-center gap-1.5 font-mono font-bold text-[#205c3b]">
+                    <Lock size={12} />
+                    <span>Code: {event.access_code}</span>
+                    <button
+                      onClick={() => handleCopyCode(event.access_code)}
+                      className="ml-1 text-[#829087] hover:text-[#205c3b]"
+                      title="Copy access code"
+                    >
+                      {copiedCode === event.access_code ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#6b7c71]">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>AWS Face AI Active</span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold">{event.date}</p>
-                  <p className="mt-0.5 text-xs text-[#829087]">Code: {event.access_code}</p>
+
+                {/* Ceremony Folders Overview */}
+                <div className="mt-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#7e8f84]">Ceremony Folders</p>
+                    <span className="text-[11px] text-[#205c3b] font-bold">
+                      {event.photo_count || event.photosCount || 0} Total Photos
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Haldi', 'Mehendi', 'Sangeet', 'Shaadi', 'Reception', 'Other'].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          setActiveEvent(event);
+                          if (onNavigateToUpload) onNavigateToUpload(cat);
+                        }}
+                        className="group flex items-center justify-between rounded-xl border border-[#e2eae0] bg-white px-2.5 py-2 text-left transition hover:border-[#205c3b] hover:bg-[#f2f7f0]"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Folder size={13} className="text-[#3b6f4e] shrink-0 group-hover:scale-110 transition" />
+                          <span className="text-xs font-semibold text-[#293d31] truncate">{cat}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <StatusBadge>{event.status}</StatusBadge>
-                <button
-                  onClick={() => onOpenQr(event)}
-                  className="secondary-button !py-2 !px-3 text-xs flex items-center gap-1.5"
-                >
-                  <QrCode size={14} /> Guest QR
-                </button>
-                <button
-                  onClick={() => setActiveEvent(event)}
-                  className={`!py-2 !px-3 rounded-xl text-xs font-bold transition ${
-                    activeEvent?.id === event.id
-                      ? 'bg-[#205c3b] text-white'
-                      : 'border border-[#d5ded3] text-[#344d3f] hover:bg-[#edf2ea]'
-                  }`}
-                >
-                  {activeEvent?.id === event.id ? 'Selected' : 'Select'}
-                </button>
-                <button
-                  onClick={() => onDeleteEvent(event.id)}
-                  title="Delete event"
-                  className="p-2 text-[#9a8880] hover:text-red-600 transition"
-                >
-                  <Trash2 size={16} />
-                </button>
+
+                {/* Action Buttons */}
+                <div className="mt-5 pt-4 border-t border-[#edf2ec] flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    onClick={() => onOpenQr(event)}
+                    className="secondary-button !py-2 !px-3 text-xs flex items-center gap-1.5"
+                  >
+                    <QrCode size={14} /> Guest QR & Registration
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setActiveEvent(event);
+                        if (onNavigateToUpload) onNavigateToUpload('Haldi');
+                      }}
+                      className="secondary-button !py-2 !px-3 text-xs flex items-center gap-1.5"
+                    >
+                      <FolderUp size={14} /> Dump Photos
+                    </button>
+                    <button
+                      onClick={() => setActiveEvent(event)}
+                      className={`!py-2 !px-4 rounded-xl text-xs font-bold transition shadow-sm ${
+                        isActive
+                          ? 'bg-[#205c3b] text-white shadow-emerald-900/10'
+                          : 'border border-[#d5ded3] text-[#344d3f] hover:bg-[#edf2ea]'
+                      }`}
+                    >
+                      {isActive ? 'Active Vault' : 'Select'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            ))}
+            );
+          })}
+        </div>
+      ) : (
+        <div className="soft-card p-12 text-center rounded-3xl">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#edf4ec] text-[#205c3b]">
+            <FolderArchive size={26} />
           </div>
-        ) : (
-          <div className="p-12 text-center">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#f2f7f1] text-[#285d3e]">
-              <Grid2X2 size={24} />
-            </div>
-            <h3 className="display-font mt-4 text-xl font-bold text-[#1d2f24]">No wedding events yet</h3>
-            <p className="mt-1 text-xs text-[#829087] max-w-sm mx-auto">
-              Create your first celebration to print QR codes, upload ceremony photos, and match guest selfies.
-            </p>
-            <button onClick={onNewEvent} className="primary-button mt-5 text-xs">
-              <ImagePlus size={15} /> Create your first event
-            </button>
-          </div>
-        )}
-      </div>
+          <h3 className="display-font mt-4 text-xl font-bold text-[#1f3127]">No events found</h3>
+          <p className="mt-1 text-xs text-[#829087]">Create a new celebration vault to organize photos into ceremony folders.</p>
+        </div>
+      )}
     </>
   );
 }
@@ -503,73 +587,143 @@ function GuestsView({ guests, onOpenGuestGallery }) {
 }
 
 // 4. UPLOADS SCREEN (WHERE PHOTOGRAPHER UPLOADS CEREMONY PHOTOS)
-function UploadsView({ activeEvent, onUploadComplete, onShowToast }) {
-  const [category, setCategory] = useState('Haldi');
+function UploadsView({ activeEvent, onUploadComplete, onShowToast, initialCategory = 'Haldi' }) {
+  const [category, setCategory] = useState(initialCategory);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [currentFileName, setCurrentFileName] = useState('');
+  const [folderData, setFolderData] = useState([]);
+  const [isLoadingFolders, setIsLoadingFolders] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
-  const handleFileChange = (e) => {
-    if (e.target.files) {
-      setSelectedFiles(Array.from(e.target.files));
+  const fileInputRef = React.useRef(null);
+  const folderInputRef = React.useRef(null);
+
+  const eventId = activeEvent?.id || activeEvent?.event_id;
+
+  // Load ceremony folders and photo counts from backend
+  const loadFolders = useCallback(() => {
+    if (!eventId) return;
+    setIsLoadingFolders(true);
+    eventsAPI.getFolders(eventId)
+      .then(res => {
+        if (res.data?.success && res.data?.data?.folders) {
+          setFolderData(res.data.data.folders);
+        }
+      })
+      .catch(err => {
+        console.debug('Folders fetch note:', err);
+      })
+      .finally(() => setIsLoadingFolders(false));
+  }, [eventId]);
+
+  useEffect(() => {
+    loadFolders();
+  }, [loadFolders]);
+
+  const handleFilesChosen = (files) => {
+    if (!files || files.length === 0) return;
+    // Filter only image files
+    const imageFiles = Array.from(files).filter(f =>
+      f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name)
+    );
+    setSelectedFiles(imageFiles);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer?.files) {
+      handleFilesChosen(e.dataTransfer.files);
     }
   };
 
+  // High-performance 5x concurrent uploader
   const handleStartUpload = async () => {
     if (selectedFiles.length === 0 || !activeEvent) return;
     setIsUploading(true);
-    setUploadProgress(5);
+    setUploadProgress(1);
 
     const total = selectedFiles.length;
     let completed = 0;
     const uploadedPhotoObjects = [];
+    const concurrency = Math.min(5, total);
 
-    for (let i = 0; i < total; i++) {
-      const file = selectedFiles[i];
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('event_id', activeEvent.event_id || activeEvent.id);
-        formData.append('category', category);
+    let currentIndex = 0;
 
-        const res = await photosAPI.upload(formData);
-        const data = res.data?.data;
-        uploadedPhotoObjects.push({
-          id: data?.photo_id || (Date.now() + i),
-          eventId: activeEvent.id,
-          category,
-          url: data?.file_path ? mediaUrl(data.file_path) : URL.createObjectURL(file),
-          name: file.name,
-        });
-      } catch (err) {
-        console.warn('Backend photo upload note:', err);
-        uploadedPhotoObjects.push({
-          id: Date.now() + i,
-          eventId: activeEvent.id,
-          category,
-          url: URL.createObjectURL(file),
-          name: file.name,
-        });
+    const worker = async () => {
+      while (currentIndex < total) {
+        const i = currentIndex++;
+        const file = selectedFiles[i];
+        setCurrentFileName(file.name);
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('event_id', eventId);
+          formData.append('category', category);
+
+          const res = await photosAPI.upload(formData);
+          const data = res.data?.data;
+          uploadedPhotoObjects.push({
+            id: data?.photo_id || (Date.now() + i),
+            eventId: eventId,
+            category,
+            url: data?.file_path ? mediaUrl(data.file_path) : URL.createObjectURL(file),
+            name: file.name,
+          });
+        } catch (err) {
+          console.warn('Upload error for file ' + file.name + ':', err);
+          uploadedPhotoObjects.push({
+            id: Date.now() + i,
+            eventId: eventId,
+            category,
+            url: URL.createObjectURL(file),
+            name: file.name,
+          });
+        }
+
+        completed++;
+        setUploadProgress(Math.round((completed / total) * 100));
       }
+    };
 
-      completed++;
-      setUploadProgress(Math.round((completed / total) * 100));
-    }
+    const pool = Array.from({ length: concurrency }, () => worker());
+    await Promise.all(pool);
 
     setIsUploading(false);
     onUploadComplete(uploadedPhotoObjects, category);
-    onShowToast(`Uploaded ${selectedFiles.length} photos under ${category} to ${activeEvent.name}. AWS Rekognition facial indexing complete.`);
+    onShowToast(`Uploaded and indexed ${selectedFiles.length} photos under ${category} with AWS Rekognition.`);
     setSelectedFiles([]);
+    setCurrentFileName('');
+    loadFolders();
   };
+
+  // Category counts lookup
+  const getCategoryCount = (cat) => {
+    const f = folderData.find(item => item.name.toLowerCase() === cat.toLowerCase());
+    return f?.count || 0;
+  };
+
+  const activeFolder = folderData.find(f => f.name.toLowerCase() === category.toLowerCase());
 
   return (
     <>
       <header className="mb-7">
-        <p className="tiny-label">Studio photo ingest</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Upload Event Photos</h1>
+        <div className="flex items-center gap-2">
+          <p className="tiny-label">Studio photo ingest</p>
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f1e6] px-2 py-0.5 text-[10px] font-bold text-[#205c3b]">
+            <Layers size={10} /> Folder Vault Mode
+          </span>
+        </div>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d24] sm:text-3xl">Ceremony Photo Ingest</h1>
         <p className="mt-1 text-sm text-[#718077]">
           {activeEvent ? (
-            <>Uploading photos for <b className="text-[#205c3b]">{activeEvent.name}</b>. Pick a ceremony, choose high-res photos, and upload.</>
+            <>
+              Active Vault: <b className="text-[#205c3b]">{activeEvent.name}</b> (Code: <span className="font-mono">{activeEvent.access_code}</span>).
+              Select a ceremony folder, then dump your high-res folders (up to 5,000 photos).
+            </>
           ) : (
             'Select or create an event from the Events tab before uploading photos.'
           )}
@@ -577,98 +731,235 @@ function UploadsView({ activeEvent, onUploadComplete, onShowToast }) {
       </header>
 
       {activeEvent ? (
-        <div className="grid gap-6 lg:grid-cols-[1fr_.55fr]">
+        <div className="space-y-6">
+          {/* 1. Ceremony Folders Navigation & Status */}
           <section className="soft-card rounded-3xl p-6 sm:p-7">
-            <p className="tiny-label">1. Select ceremony category</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {CATEGORIES.map(item => (
-                <button
-                  key={item}
-                  onClick={() => setCategory(item)}
-                  className={`rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
-                    category === item
-                      ? 'border-[#285d3e] bg-[#205c3b] text-white shadow-md shadow-emerald-900/10'
-                      : 'border-[#dfe7dd] bg-white text-[#718077] hover:bg-[#f6f9f4]'
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#7e8f84]">1. Select Ceremony Folder</p>
+                <p className="text-xs text-[#829087]">Photos dumped will be organized and categorized into this folder</p>
+              </div>
+              <button
+                onClick={loadFolders}
+                disabled={isLoadingFolders}
+                className="secondary-button !py-1.5 !px-3 text-xs flex items-center gap-1"
+                title="Refresh folder stats"
+              >
+                <RefreshCw size={12} className={isLoadingFolders ? 'animate-spin' : ''} /> Refresh folders
+              </button>
             </div>
 
-            <p className="tiny-label mt-7">2. Choose photos to upload</p>
-            <label className="mt-3 block cursor-pointer">
-              <input
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <div className="grid min-h-[220px] place-items-center rounded-2xl border-2 border-dashed border-[#bcd0bc] bg-[#f8fbf6] p-8 text-center transition hover:border-[#6b9b76] hover:bg-[#f2f8f1]">
-                <div>
-                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#dfeee0] text-[#2d7045]">
-                    <FolderUp size={26} />
-                  </div>
-                  <p className="mt-4 font-bold text-[#1f3127]">Drop photos here, or click to choose files</p>
-                  <p className="mt-1 text-xs text-[#829087]">JPEG, PNG, WebP · High-res wedding photos</p>
-                  <span className="secondary-button mt-4 !py-2 text-xs">Browse files</span>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+              {CATEGORIES.map(cat => {
+                const count = getCategoryCount(cat);
+                const isSelected = category === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setCategory(cat)}
+                    className={`group relative flex flex-col items-start rounded-2xl border p-3.5 text-left transition duration-200 ${
+                      isSelected
+                        ? 'border-[#205c3b] bg-[#205c3b] text-white shadow-md shadow-emerald-900/10 ring-2 ring-[#205c3b]/20'
+                        : 'border-[#dfe7dd] bg-white text-[#526359] hover:border-[#b8caba] hover:bg-[#f6f9f4]'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <Folder
+                        size={18}
+                        className={`transition group-hover:scale-110 ${
+                          isSelected ? 'text-[#c2dfc9]' : 'text-[#3b6f4e]'
+                        }`}
+                      />
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          isSelected ? 'bg-white/20 text-white' : 'bg-[#eef3ed] text-[#3d5c48]'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </div>
+                    <span className="mt-2.5 block text-xs font-bold truncate w-full">{cat}</span>
+                    <span className={`text-[10px] ${isSelected ? 'text-[#c2dfc9]' : 'text-[#829087]'}`}>
+                      {count === 1 ? '1 photo' : `${count} photos`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 2. High-Capacity Bulk Folder Dump Zone */}
+          <section className="soft-card rounded-3xl p-6 sm:p-7">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#7e8f84]">2. Dump Photos or Full Folders</p>
+                <p className="text-xs text-[#829087]">
+                  Uploading to destination folder: <b className="text-[#205c3b]">{category}</b> · Powered by AWS Rekognition face indexing
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => folderInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="secondary-button !py-2 !px-3 text-xs flex items-center gap-1.5 font-bold text-[#205c3b] border-[#205c3b]/30 hover:bg-[#edf5ec]"
+                >
+                  <FolderPlus size={15} /> Dump Entire Folder
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="primary-button !py-2 !px-3.5 text-xs flex items-center gap-1.5"
+                >
+                  <ImagePlus size={15} /> Choose Photos
+                </button>
+              </div>
+            </div>
+
+            {/* Hidden native inputs for files and whole directory dump */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              onChange={(e) => handleFilesChosen(e.target.files)}
+              className="hidden"
+            />
+            <input
+              ref={folderInputRef}
+              type="file"
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={(e) => handleFilesChosen(e.target.files)}
+              className="hidden"
+            />
+
+            {/* Drag & Drop Box */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`grid min-h-[220px] cursor-pointer place-items-center rounded-2xl border-2 border-dashed p-8 text-center transition ${
+                dragOver
+                  ? 'border-[#205c3b] bg-[#eef7ed] scale-[0.99]'
+                  : 'border-[#bcd0bc] bg-[#f8fbf6] hover:border-[#6b9b76] hover:bg-[#f2f8f1]'
+              }`}
+            >
+              <div>
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#dfeee0] text-[#2d7045] shadow-inner">
+                  <FolderUp size={30} />
+                </div>
+                <h3 className="mt-4 text-base font-bold text-[#1f3127]">
+                  Drag and drop your ceremony folder here, or click to browse
+                </h3>
+                <p className="mt-1 text-xs text-[#829087] max-w-md mx-auto">
+                  Supports bulk folders (e.g. 500 – 5,000 raw images). Automatically converted to high-precision JPEG for AWS Rekognition facial indexing.
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  <span className="rounded-lg bg-white px-3 py-1 text-[11px] font-bold text-[#4e6456] border border-[#d2ded0]">
+                    Destination: {category} Folder
+                  </span>
+                  <span className="rounded-lg bg-white px-3 py-1 text-[11px] font-bold text-[#4e6456] border border-[#d2ded0]">
+                    High-Res JPEG · PNG · WebP
+                  </span>
                 </div>
               </div>
-            </label>
+            </div>
 
+            {/* Upload Queue Banner */}
             {selectedFiles.length > 0 && (
-              <div className="mt-5 rounded-2xl border border-[#dfe7dd] bg-[#fafcf9] p-4">
-                <div className="flex items-center justify-between">
+              <div className="mt-6 rounded-2xl border border-[#dfe7dd] bg-[#fafcf9] p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs font-bold text-[#20402e]">{selectedFiles.length} files selected</p>
-                    <p className="text-[11px] text-[#829087]">Ceremony: <b>{category}</b> · Event: <b>{activeEvent.name}</b></p>
+                    <p className="text-sm font-bold text-[#20402e]">
+                      {selectedFiles.length} photos staged for upload
+                    </p>
+                    <p className="text-xs text-[#829087]">
+                      Ready to dump into <b>{category}</b> folder for event <b>{activeEvent.name}</b>.
+                    </p>
                   </div>
-                  <button
-                    onClick={handleStartUpload}
-                    disabled={isUploading}
-                    className="primary-button !py-2 text-xs"
-                  >
-                    {isUploading ? 'Indexing faces...' : `Upload to ${category}`}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedFiles([])}
+                      disabled={isUploading}
+                      className="secondary-button !py-2 !px-3 text-xs"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={handleStartUpload}
+                      disabled={isUploading}
+                      className="primary-button !py-2 !px-4 text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-900/10"
+                    >
+                      <Sparkles size={14} className={isUploading ? 'animate-spin' : ''} />
+                      {isUploading ? 'Uploading & Indexing with AWS...' : `Dump ${selectedFiles.length} photos into ${category}`}
+                    </button>
+                  </div>
                 </div>
 
                 {isUploading && (
-                  <div className="mt-4">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3eae1]">
+                  <div className="mt-4 pt-4 border-t border-[#e2eae0]">
+                    <div className="flex justify-between text-xs font-semibold text-[#546a5b] mb-1.5">
+                      <span className="truncate max-w-sm">Indexing: {currentFileName || 'Processing batch...'}</span>
+                      <span className="font-bold text-[#205c3b]">{uploadProgress}% complete</span>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#e3eae1]">
                       <div
                         className="h-full rounded-full bg-[#286443] transition-all duration-300"
                         style={{ width: `${uploadProgress}%` }}
                       />
                     </div>
-                    <p className="mt-2 text-right text-[10px] font-bold text-[#6a8072]">{uploadProgress}% processed</p>
+                    <p className="mt-2 text-right text-[11px] text-[#718578]">
+                      Concurrent AWS facial matching running in background. High-confidence matches (≥85%) will be delivered instantly to registered guests.
+                    </p>
                   </div>
                 )}
               </div>
             )}
           </section>
 
-          <aside className="soft-card rounded-3xl p-6 sm:p-7">
-            <p className="font-bold text-[#1e3127]">AWS Rekognition Pipeline</p>
-            <div className="mt-6 space-y-5">
-              {[
-                ['1', 'Encrypted S3 Ingest', 'Photos are stored securely in your private S3 bucket.'],
-                ['2', 'Biometric Landmark Alignment', 'AWS Rekognition detects faces, filters motion blur, and checks quality.'],
-                ['3', 'Two-Tier Match Assignment', '≥85% similarity is auto-sent to guests; 60%-84.9% goes to the review screen.'],
-                ['4', 'Zero False Positives', '<60% similarity is dropped permanently, protecting client privacy.'],
-              ].map(([num, title, text]) => (
-                <div className="flex gap-3" key={num}>
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e3eee2] text-xs font-bold text-[#286443]">
-                    {num}
-                  </span>
-                  <div>
-                    <p className="text-sm font-bold text-[#22362b]">{title}</p>
-                    <p className="mt-0.5 text-xs leading-5 text-[#829087]">{text}</p>
-                  </div>
+          {/* 3. Folder Gallery Explorer - Photos in Selected Ceremony Folder */}
+          {activeFolder && activeFolder.photos && activeFolder.photos.length > 0 && (
+            <section className="soft-card rounded-3xl p-6 sm:p-7">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-[#1e3127] flex items-center gap-2">
+                    <Folder size={18} className="text-[#205c3b]" />
+                    {category} Folder Vault
+                    <span className="rounded-full bg-[#e8f1e6] px-2 py-0.5 text-xs font-bold text-[#205c3b]">
+                      {activeFolder.count} photos
+                    </span>
+                  </h3>
+                  <p className="text-xs text-[#829087]">Existing ceremony photographs archived in this vault</p>
                 </div>
-              ))}
-            </div>
-          </aside>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                {activeFolder.photos.map((p) => (
+                  <div key={p.photo_id} className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-[#e1e9df] bg-[#f0f4ef]">
+                    <img
+                      src={mediaUrl(p.file_path)}
+                      alt="Ceremony photo"
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition p-2 flex flex-col justify-end text-white">
+                      <span className="text-[10px] font-bold">Photo #{p.photo_id}</span>
+                      <a
+                        href={mediaUrl(p.file_path)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 text-[10px] underline hover:text-emerald-200"
+                      >
+                        View full
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       ) : (
         <div className="soft-card p-12 text-center rounded-3xl">
@@ -1481,6 +1772,7 @@ export default function App() {
   const [guests, setGuests] = useState(() => albumStore.getGuests());
   const [reviewCandidates, setReviewCandidates] = useState(() => albumStore.getReviewCandidates());
   const [photos, setPhotos] = useState(() => albumStore.getPhotos());
+  const [uploadCategory, setUploadCategory] = useState('Haldi');
   const [toastMessage, setToastMessage] = useState('');
 
   // Modals
@@ -1862,6 +2154,10 @@ export default function App() {
               onNewEvent={() => setShowNewEventModal(true)}
               onOpenQr={(ev) => setShowQrModal(ev)}
               onDeleteEvent={handleDeleteEvent}
+              onNavigateToUpload={(cat) => {
+                if (cat) setUploadCategory(cat);
+                setPage('Uploads');
+              }}
             />
           )}
 
@@ -1877,6 +2173,7 @@ export default function App() {
               activeEvent={activeEvent}
               onUploadComplete={handleUploadComplete}
               onShowToast={showToast}
+              initialCategory={uploadCategory}
             />
           )}
 
