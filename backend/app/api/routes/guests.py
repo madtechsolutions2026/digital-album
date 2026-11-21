@@ -1,3 +1,4 @@
+from pathlib import Path
 import traceback
 """
 Guest registration and match review API endpoints.
@@ -462,6 +463,24 @@ async def get_guest_gallery(
     }
 
 
+def get_storage_file_path(relative_path: str) -> Optional[str]:
+    clean = (relative_path or "").lstrip("/").replace("\\", "/")
+    settings = get_settings()
+    sp = settings.STORAGE_PATH or "storage"
+    candidates = [
+        (Path(sp) / clean).resolve(),
+        (Path("storage") / clean).resolve(),
+        (Path(__file__).resolve().parent.parent.parent / sp / clean).resolve(),
+        (Path(__file__).resolve().parent.parent.parent / "storage" / clean).resolve(),
+        (Path.cwd() / sp / clean).resolve(),
+        (Path.cwd() / "storage" / clean).resolve(),
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
 @router.post("/guests/{guest_id}/rematch", status_code=status.HTTP_200_OK)
 async def rematch_guest(
     guest_id: int,
@@ -481,20 +500,9 @@ async def rematch_guest(
         await db.execute(delete(GuestMatch).where(GuestMatch.guest_id == guest_id))
         await db.flush()
 
-        clean_selfie = (guest.selfie_path or "").lstrip("/").replace("\\", "/")
-        candidates = [
-            os.path.join("storage", clean_selfie),
-            os.path.join(".", "storage", clean_selfie),
-            os.path.abspath(os.path.join("storage", clean_selfie)),
-        ]
-        selfie_full = None
-        for cand in candidates:
-            if os.path.isfile(cand):
-                selfie_full = cand
-                break
-
+        selfie_full = get_storage_file_path(guest.selfie_path)
         if not selfie_full:
-            return {"success": False, "error": f"Selfie file not found on disk at {candidates}"}
+            return {"success": False, "error": f"Selfie file not found on disk for path: {guest.selfie_path}"}
 
         with open(selfie_full, "rb") as sf:
             selfie_bytes = sf.read()
@@ -510,18 +518,7 @@ async def rematch_guest(
 
         for photo in photos:
             try:
-                clean_photo = (photo.file_path or "").lstrip("/").replace("\\", "/")
-                p_cands = [
-                    os.path.join("storage", clean_photo),
-                    os.path.join(".", "storage", clean_photo),
-                    os.path.abspath(os.path.join("storage", clean_photo)),
-                ]
-                photo_full = None
-                for cand in p_cands:
-                    if os.path.isfile(cand):
-                        photo_full = cand
-                        break
-
+                photo_full = get_storage_file_path(photo.file_path)
                 if not photo_full:
                     continue
 
