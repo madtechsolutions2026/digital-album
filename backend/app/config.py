@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # AWS Rekognition & S3 Production Face AI Configuration
     AWS_REGION: str = Field(
-        default="ap-south-1",
+        default="ap-southeast-2",
         description="AWS Region (default Mumbai: ap-south-1)"
     )
 
