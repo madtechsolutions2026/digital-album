@@ -45,6 +45,7 @@ export const eventsAPI = {
   getAll: () => api.get('/api/events'),
   create: (data) => api.post('/api/events', data),
   getById: (id) => api.get(`/api/events/${id}`),
+  getFolders: (id) => api.get(`/api/events/${id}/folders`),
   delete: (id) => api.delete(`/api/events/${id}`),
 };
 

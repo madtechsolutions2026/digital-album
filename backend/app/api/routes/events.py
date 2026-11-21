@@ -8,7 +8,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel, Field
@@ -383,5 +383,77 @@ async def process_event_faces(
             "event_id": event_id,
             "status": "queued",
             "status_url": f"/api/jobs/{job_id}/status"
+        }
+    }
+
+
+@router.get(
+    "/{event_id}/folders",
+    status_code=status.HTTP_200_OK,
+    summary="Get ceremony folders breakdown for an event",
+)
+async def get_event_folders(
+    event_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.photo import Photo
+    from app.models.guest import Guest
+
+    ev_res = await db.execute(select(Event).where(Event.event_id == event_id))
+    event = ev_res.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    photos_res = await db.execute(
+        select(Photo).where(Photo.event_id == event_id).order_by(Photo.uploaded_at.desc())
+    )
+    photos = photos_res.scalars().all()
+
+    STANDARD_FOLDERS = [
+        "Haldi",
+        "Mehendi",
+        "Sangeet",
+        "Shaadi",
+        "Reception",
+        "Pre-Wedding",
+        "Cocktail",
+        "Other",
+    ]
+
+    folders_map = {f: {"name": f, "count": 0, "cover_url": None, "photos": []} for f in STANDARD_FOLDERS}
+
+    for p in photos:
+        cat = "Other"
+        if p.photo_metadata and isinstance(p.photo_metadata, dict):
+            cat = p.photo_metadata.get("category") or "Other"
+        if cat not in folders_map:
+            folders_map[cat] = {"name": cat, "count": 0, "cover_url": None, "photos": []}
+
+        folders_map[cat]["count"] += 1
+        item = {
+            "photo_id": p.photo_id,
+            "file_path": p.file_path,
+            "category": cat,
+            "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
+        }
+        if not folders_map[cat]["cover_url"]:
+            folders_map[cat]["cover_url"] = p.file_path
+        if len(folders_map[cat]["photos"]) < 24:
+            folders_map[cat]["photos"].append(item)
+
+    guests_count_res = await db.execute(
+        select(func.count(Guest.guest_id)).where(Guest.event_id == event_id)
+    )
+    total_guests = guests_count_res.scalar_one() or 0
+
+    return {
+        "success": True,
+        "data": {
+            "event_id": event_id,
+            "event_name": event.name,
+            "access_code": event.access_code,
+            "total_photos": len(photos),
+            "total_guests": total_guests,
+            "folders": list(folders_map.values()),
         }
     }
