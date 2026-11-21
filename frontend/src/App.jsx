@@ -922,7 +922,8 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
   const [consented, setConsented] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [registeredGuestId, setRegisteredGuestId] = useState(null);
+  const [registeredGuest, setRegisteredGuest] = useState(null);
+  const [showMyAlbum, setShowMyAlbum] = useState(false);
 
   const handleSelfieUpload = (e) => {
     const file = e.target.files?.[0];
@@ -944,7 +945,7 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
         selfieFile,
         selfieUrl: selfiePreview || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
       });
-      setRegisteredGuestId(guestObj?.id || guestObj?.guest_id);
+      setRegisteredGuest(guestObj);
       setSubmitted(true);
     } catch (err) {
       console.error('Registration failed:', err);
@@ -953,6 +954,20 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
       setIsSubmitting(false);
     }
   };
+
+  // If guest clicks "Open My Private Album", render their photo album directly
+  if (showMyAlbum && registeredGuest) {
+    return (
+      <GuestGalleryModal
+        guest={registeredGuest}
+        activeEvent={activeEvent}
+        onClose={() => setShowMyAlbum(false)}
+        isGuestView={true}
+      />
+    );
+  }
+
+  const confirmedCount = registeredGuest?.matchedCount ?? registeredGuest?.photosCount ?? 0;
 
   const content = (
     <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl mx-auto border border-[#e3ebe1]">
@@ -1044,26 +1059,66 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
           </button>
         </form>
       ) : (
-        <div className="p-8 text-center">
+        <div className="p-7 text-center">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#e3f4e7] text-[#256c3f]">
             <Check size={32} />
           </div>
-          <h3 className="display-font mt-4 text-2xl font-bold text-[#1d2f24]">You’re registered!</h3>
-          <p className="mt-2 text-xs leading-5 text-[#738479]">
-            Thank you {name}. We will match your selfie with photos from {activeEvent?.name}. You will receive a private gallery link once the studio publishes.
+          <h3 className="display-font mt-4 text-2xl font-bold text-[#1d2f24]">You’re registered, {name}!</h3>
+          
+          {selfiePreview && (
+            <div className="mt-3 flex justify-center">
+              <img
+                src={selfiePreview}
+                alt={name}
+                className="h-20 w-20 rounded-2xl object-cover border-2 border-[#205c3b] shadow-md"
+              />
+            </div>
+          )}
+
+          <p className="mt-3 text-xs leading-5 text-[#738479]">
+            Your reference selfie is active for <b>{activeEvent?.name || 'this celebration'}</b>.
           </p>
-          <div className="mt-6 flex flex-col gap-2">
-            {onClose ? (
-              <button onClick={onClose} className="primary-button w-full">
-                Done
-              </button>
-            ) : (
-              <a
-                href={window.location.origin}
-                className="secondary-button w-full text-xs"
+
+          {confirmedCount > 0 ? (
+            <div className="mt-5 rounded-2xl bg-[#edf5ed] p-4 border border-[#cbe2ce] text-left">
+              <p className="text-sm font-bold text-[#205c3b]">🎉 {confirmedCount} photos found of you!</p>
+              <p className="text-xs text-[#52735d] mt-1">AWS Rekognition facial match is confirmed.</p>
+              <button
+                onClick={() => setShowMyAlbum(true)}
+                className="primary-button w-full mt-3 !py-3 flex items-center justify-center gap-2"
               >
-                Go to Studio Console
-              </a>
+                Open My Private Album <ArrowRight size={15} />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl bg-[#f7faf6] p-4 border border-[#e1eade] text-left">
+              <p className="text-xs font-bold text-[#1f3127]">Photos in progress</p>
+              <p className="text-xs text-[#718077] mt-1 leading-5">
+                The photographer is uploading and indexing celebration photos. As soon as photos with you are published, they will show up here.
+              </p>
+              <button
+                onClick={() => setShowMyAlbum(true)}
+                className="secondary-button w-full mt-3 text-xs flex items-center justify-center gap-1.5"
+              >
+                <ExternalLink size={13} /> Check My Album Now
+              </button>
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(window.location.href);
+                alert('Your private gallery link has been copied!');
+              }}
+              className="secondary-button w-full text-xs flex items-center justify-center gap-1.5"
+            >
+              <Copy size={13} /> Bookmark / Copy My Link
+            </button>
+            {onClose && (
+              <button onClick={onClose} className="secondary-button w-full text-xs">
+                Close
+              </button>
             )}
           </div>
         </div>
@@ -1074,13 +1129,26 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
   if (isStandalone) {
     return (
       <div className="min-h-screen bg-[#f3f5ee] flex flex-col items-center justify-center p-4 py-8">
-        <div className="w-full max-w-md mb-4 flex justify-between items-center">
-          <a href={window.location.origin} className="text-xs font-bold text-[#205c3b] hover:underline flex items-center gap-1">
-            ← Switch to Studio Console
-          </a>
-          <span className="text-[10px] uppercase font-bold text-[#829087]">Guest Onboarding</span>
+        <div className="w-full max-w-md mb-4 flex justify-between items-center px-1">
+          <span className="text-xs font-bold text-[#205c3b] flex items-center gap-1.5">
+            ✨ {activeEvent?.name || 'Wedding Celebration'}
+          </span>
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[#829087] bg-white/80 px-2.5 py-1 rounded-full border border-[#e1e8df]">
+            🔒 Guest Portal
+          </span>
         </div>
         {content}
+        <div className="mt-6 text-center">
+          <p className="text-[11px] text-[#93a197]">
+            DG Album · Private AI Face Recognition Photo Portal
+          </p>
+          <a
+            href={window.location.origin}
+            className="text-[10px] text-[#93a197] hover:text-[#205c3b] underline mt-1 inline-block"
+          >
+            Studio owner login
+          </a>
+        </div>
       </div>
     );
   }
@@ -1234,7 +1302,7 @@ function NewEventModal({ onClose, onCreateEvent }) {
 }
 
 // 10. PRIVATE GUEST GALLERY VIEW (CLIENT PERSONAL ALBUM)
-function GuestGalleryModal({ guest, activeEvent, onClose }) {
+function GuestGalleryModal({ guest, activeEvent, onClose, isGuestView = false }) {
   const [activeCategory, setActiveCategory] = useState('All');
   const confirmedPhotos = useMemo(() => {
     return albumStore.getGuestConfirmedPhotos(guest.id);
@@ -1249,7 +1317,7 @@ function GuestGalleryModal({ guest, activeEvent, onClose }) {
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-between pb-6 border-b border-[#e1e8df]">
           <button onClick={onClose} className="secondary-button text-xs flex items-center gap-1.5">
-            <ArrowRight className="rotate-180" size={14} /> Back to studio
+            <ArrowRight className="rotate-180" size={14} /> {isGuestView ? 'Back to my registration' : 'Back to studio'}
           </button>
           <div className="text-right">
             <span className="text-xs text-[#829087]">Private gallery view</span>
