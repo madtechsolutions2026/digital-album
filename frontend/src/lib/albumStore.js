@@ -189,68 +189,20 @@ class AlbumStore {
   }
 
   /**
-   * Biometric Face Matching Engine
-   * Compares a guest's selfie against event photos using AWS Rekognition confidence rules.
+   * Genuine AWS Rekognition matches store
+   * Updates confirmed matches from the backend API
    */
+  setGuestMatches(guestId, matches) {
+    const existing = this.getMatches().filter(m => String(m.guestId) !== String(guestId));
+    const updated = [...matches, ...existing];
+    this._setStorage('matches', updated);
+    return updated;
+  }
+
   matchGuestAgainstEventPhotos(guest, eventPhotos) {
-    const matches = [];
-    const allMatches = this.getMatches();
-
-    eventPhotos.forEach((photo, idx) => {
-      const str = `${guest.id}_${photo.id}_${guest.name}`;
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = (hash << 5) - hash + str.charCodeAt(i);
-        hash |= 0;
-      }
-      const variance = Math.abs(hash % 38);
-      const similarity = 60.0 + variance; // 60% to 98%
-
-      if (similarity >= 85.0) {
-        // High confidence: Auto-confirmed directly to guest private gallery
-        matches.push({
-          matchId: Date.now() + idx,
-          eventId: guest.eventId,
-          guestId: guest.id,
-          photoId: photo.id,
-          guestName: guest.name,
-          guestPhone: guest.phone,
-          guestSelfie: guest.selfieUrl,
-          photoUrl: photo.url,
-          category: photo.category || 'Shaadi',
-          similarity: parseFloat(similarity.toFixed(1)),
-          status: 'confirmed',
-          aiModel: 'AWS Rekognition (Auto-confirmed >= 85%)',
-        });
-      } else if (similarity >= 60.0) {
-        // Medium confidence: Routed to Match Review Queue
-        matches.push({
-          matchId: Date.now() + idx,
-          eventId: guest.eventId,
-          guestId: guest.id,
-          photoId: photo.id,
-          guestName: guest.name,
-          guestPhone: guest.phone,
-          guestSelfie: guest.selfieUrl,
-          photoUrl: photo.url,
-          category: photo.category || 'Shaadi',
-          similarity: parseFloat(similarity.toFixed(1)),
-          status: 'pending_review',
-          aiModel: 'AWS Rekognition (Medium confidence)',
-        });
-      }
-    });
-
-    const updatedMatches = [...matches, ...allMatches];
-    this._setStorage('matches', updatedMatches);
-
-    const confirmedCount = matches.filter(m => m.status === 'confirmed').length;
-    const pendingCount = matches.filter(m => m.status === 'pending_review').length;
-    guest.photosCount = confirmedCount;
-    guest.status = pendingCount > 0 ? 'Needs review' : (confirmedCount > 0 ? 'Matched' : 'Registered');
-
-    this.saveGuest(guest);
-    return matches;
+    // Face matching is strictly processed in the cloud via AWS Rekognition (backend).
+    // Mock string hashing has been completely eliminated to prevent false matches.
+    return [];
   }
 
   getGuestConfirmedPhotos(guestId) {
