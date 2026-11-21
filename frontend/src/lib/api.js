@@ -72,10 +72,14 @@ export const guestsAPI = {
     api.post('/api/guests/register', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
-  getAll: (eventId = null) =>
-    api.get('/api/guests', { params: eventId ? { event_id: eventId } : {} }),
-  getMatchesForReview: (eventId = null) =>
-    api.get('/api/matches/review', { params: eventId ? { event_id: eventId } : {} }),
+  getAll: (filter = null) => {
+    const params = typeof filter === 'object' && filter !== null ? filter : (filter ? { event_id: filter } : {});
+    return api.get('/api/guests', { params });
+  },
+  getMatchesForReview: (filter = null) => {
+    const params = typeof filter === 'object' && filter !== null ? filter : (filter ? { event_id: filter } : {});
+    return api.get('/api/matches/review', { params });
+  },
   actionMatch: (matchId, action) =>
     api.post(`/api/matches/${matchId}/action`, { action }),
 };
