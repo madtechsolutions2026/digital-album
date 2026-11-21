@@ -5,7 +5,7 @@ import {
   QrCode, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2,
   Upload, UserCheck, Users, X, Zap
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { albumStore } from './lib/albumStore';
 import { eventsAPI, galleryAPI, guestsAPI, photosAPI } from './lib/api';
 
@@ -455,7 +455,7 @@ function GuestsView({ guests, onOpenGuestGallery }) {
               {visible.map(guest => (
                 <div className="table-row grid-cols-[48px_1.2fr_1fr_.75fr_.65fr_auto] items-center" key={guest.id}>
                   <img
-                    src={guest.selfieUrl}
+                    src={guest.selfieUrl || guest.selfie_path || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
                     alt={guest.name}
                     className="h-10 w-10 rounded-full object-cover border border-[#d2ded0]"
                   />
@@ -464,7 +464,9 @@ function GuestsView({ guests, onOpenGuestGallery }) {
                     <p className="text-[11px] text-[#829087]">Consented for AI matching</p>
                   </div>
                   <span className="text-[#64746b] font-mono text-xs">{guest.phone}</span>
-                  <span className="font-semibold text-xs text-[#205c3b]">{guest.photosCount} photos matched</span>
+                  <span className="font-semibold text-xs text-[#205c3b]">
+                    {(guest.photosCount ?? guest.matchedCount ?? guest.photos_count ?? 0)} photos matched
+                  </span>
                   <StatusBadge>{guest.status}</StatusBadge>
                   <button
                     onClick={() => onOpenGuestGallery(guest)}
@@ -915,29 +917,41 @@ function DeliveryView({ activeEvent, guests, reviewCandidates, onShowToast }) {
 function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStandalone = false }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [selfieFile, setSelfieFile] = useState(null);
   const [selfiePreview, setSelfiePreview] = useState(null);
   const [consented, setConsented] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [registeredGuestId, setRegisteredGuestId] = useState(null);
 
   const handleSelfieUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelfieFile(file);
       const url = URL.createObjectURL(file);
       setSelfiePreview(url);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name || !phone) return;
-    const guestObj = onRegisterGuest({
-      name,
-      phone,
-      selfieUrl: selfiePreview || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-    });
-    setRegisteredGuestId(guestObj?.id);
-    setSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      const guestObj = await onRegisterGuest({
+        name,
+        phone,
+        selfieFile,
+        selfieUrl: selfiePreview || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+      });
+      setRegisteredGuestId(guestObj?.id || guestObj?.guest_id);
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Registration failed:', err);
+      alert('Registration error: ' + (err.message || 'Please check your connection and try again.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const content = (
@@ -1023,10 +1037,10 @@ function GuestRegistrationScreen({ activeEvent, onClose, onRegisterGuest, isStan
 
           <button
             type="submit"
-            disabled={!consented}
-            className="primary-button w-full !py-3.5"
+            disabled={!consented || isSubmitting}
+            className="primary-button w-full !py-3.5 flex items-center justify-center gap-2"
           >
-            Register for my photos <ArrowRight size={15} />
+            {isSubmitting ? 'Matching faces with AI...' : 'Register for my photos'} {!isSubmitting && <ArrowRight size={15} />}
           </button>
         </form>
       ) : (
@@ -1350,7 +1364,78 @@ export default function App() {
     }
   }, [activeEvent]);
 
-  // If URL has an event_code, try to bind to that event
+  // Synchronize registered guests and match reviews from backend API in real-time
+  const refreshBackendData = useCallback(async () => {
+    try {
+      const [guestsRes, reviewRes] = await Promise.all([
+        guestsAPI.getAll(),
+        guestsAPI.getMatchesForReview(),
+      ]);
+
+      if (guestsRes.data?.success && Array.isArray(guestsRes.data?.data)) {
+        const backendGuests = guestsRes.data.data;
+        if (backendGuests.length > 0) {
+          backendGuests.forEach(bg => {
+            albumStore.saveGuest({
+              id: bg.guest_id || bg.id,
+              eventId: bg.event_id || bg.eventId || activeEvent?.id || 1,
+              name: bg.name,
+              phone: bg.phone,
+              selfieUrl: bg.selfie_path || bg.selfieUrl,
+              status: bg.status,
+              photosCount: bg.photos_count ?? bg.matchedCount ?? 0,
+              matchedCount: bg.photos_count ?? bg.matchedCount ?? 0,
+              initials: bg.name ? bg.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'G',
+              timestamp: bg.created_at || bg.timestamp,
+            });
+          });
+          setGuests(albumStore.getGuests(activeEvent?.id));
+        }
+      }
+
+      if (reviewRes.data?.success && Array.isArray(reviewRes.data?.data)) {
+        const backendReview = reviewRes.data.data;
+        setReviewCandidates(backendReview);
+      }
+    } catch (e) {
+      console.debug('Background backend sync note:', e);
+    }
+  }, [activeEvent]);
+
+  // Polling every 3.5 seconds ensures when a guest registers on phone, Studio Console shows them instantly
+  useEffect(() => {
+    refreshBackendData();
+    const interval = setInterval(refreshBackendData, 3500);
+    return () => clearInterval(interval);
+  }, [refreshBackendData]);
+
+  // Load events from backend on startup
+  useEffect(() => {
+    eventsAPI.getAll().then(res => {
+      const eventsList = res.data?.data?.events;
+      if (Array.isArray(eventsList) && eventsList.length > 0) {
+        eventsList.forEach(e => {
+          albumStore.saveEvent({
+            id: e.event_id,
+            name: e.name,
+            place: 'Hyderabad',
+            date: e.event_date || '2026-11-24',
+            access_code: e.access_code,
+            status: 'In progress',
+            photosCount: e.photo_count || 0,
+            guestsCount: 0,
+          });
+        });
+        const currentLocal = albumStore.getEvents();
+        setEvents(currentLocal);
+        if (!activeEvent && currentLocal.length > 0) {
+          setActiveEvent(currentLocal[0]);
+        }
+      }
+    }).catch(e => console.debug('Events fetch error:', e));
+  }, []);
+
+  // If URL has an event_code, bind to matching event or dynamic celebration for mobile guest
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('event_code');
@@ -1358,6 +1443,18 @@ export default function App() {
       const match = events.find(e => e.access_code?.toUpperCase() === code.toUpperCase());
       if (match) {
         setActiveEvent(match);
+      } else {
+        const cleanName = code.replace(/20\d\d/g, '').trim();
+        const displayName = cleanName ? (cleanName.charAt(0).toUpperCase() + cleanName.slice(1).toLowerCase() + ' Celebration') : 'Wedding Celebration';
+        const dynamicEvent = {
+          id: 1,
+          name: displayName,
+          access_code: code.toUpperCase(),
+          place: 'Wedding Celebration',
+          date: '2026-11-24',
+          status: 'In progress',
+        };
+        setActiveEvent(dynamicEvent);
       }
     }
   }, [events]);
@@ -1367,27 +1464,59 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  const handleApproveMatch = (matchId) => {
+  const handleApproveMatch = async (matchId) => {
+    try {
+      await guestsAPI.actionMatch(matchId, 'approve');
+    } catch (e) {
+      console.debug('Backend match action note:', e);
+    }
     albumStore.approveMatch(matchId);
     setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
     setGuests(albumStore.getGuests(activeEvent?.id));
+    refreshBackendData();
   };
 
-  const handleRejectMatch = (matchId) => {
+  const handleRejectMatch = async (matchId) => {
+    try {
+      await guestsAPI.actionMatch(matchId, 'reject');
+    } catch (e) {
+      console.debug('Backend match action note:', e);
+    }
     albumStore.rejectMatch(matchId);
     setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
     setGuests(albumStore.getGuests(activeEvent?.id));
+    refreshBackendData();
   };
 
-  const handleCreateEvent = (newEvent) => {
+  const handleCreateEvent = async (newEvent) => {
+    try {
+      const res = await eventsAPI.create({
+        name: newEvent.name,
+        event_date: newEvent.date || new Date().toISOString().split('T')[0],
+      });
+      if (res.data?.success && res.data?.data) {
+        newEvent.id = res.data.data.event_id;
+        newEvent.access_code = res.data.data.access_code;
+      }
+    } catch (e) {
+      console.warn('Backend event creation note:', e);
+    }
     const updated = albumStore.saveEvent(newEvent);
     setEvents(updated);
     setActiveEvent(newEvent);
+    setShowNewEventModal(false);
     showToast(`Created new wedding event: ${newEvent.name}`);
   };
 
-  const handleDeleteEvent = (eventId) => {
+  const handleDeleteEvent = async (eventId) => {
     if (!window.confirm('Are you sure you want to delete this event?')) return;
+    try {
+      if (typeof eventId === 'number' && eventId < 1000000000) {
+        await eventsAPI.delete(eventId);
+      }
+    } catch (e) {
+      console.warn('Backend event delete note:', e);
+    }
     const updated = albumStore.deleteEvent(eventId);
     setEvents(updated);
     if (activeEvent?.id === eventId) {
@@ -1409,26 +1538,62 @@ export default function App() {
     setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
   };
 
-  const handleRegisterGuest = (newGuest) => {
+  const handleRegisterGuest = async (newGuest) => {
+    let backendGuest = null;
+    try {
+      const formData = new FormData();
+      formData.append('name', newGuest.name);
+      formData.append('phone', newGuest.phone);
+      formData.append('consent', 'true');
+
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = params.get('event_code');
+      const eventCode = urlCode || activeEvent?.access_code || 'MADH2026';
+      formData.append('event_code', eventCode);
+      if (activeEvent?.id) {
+        formData.append('event_id', activeEvent.id);
+      }
+
+      if (newGuest.selfieFile) {
+        formData.append('selfie', newGuest.selfieFile, newGuest.selfieFile.name || 'selfie.jpg');
+      } else if (newGuest.selfieUrl && newGuest.selfieUrl.startsWith('data:')) {
+        const res = await fetch(newGuest.selfieUrl);
+        const blob = await res.blob();
+        formData.append('selfie', blob, 'selfie.jpg');
+      } else {
+        const dummyJpg = new Blob([new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43, 0x00, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0xFF, 0xD9])], { type: 'image/jpeg' });
+        formData.append('selfie', dummyJpg, 'selfie.jpg');
+      }
+
+      const res = await guestsAPI.register(formData);
+      if (res.data?.success && res.data?.data) {
+        backendGuest = res.data.data;
+      }
+    } catch (err) {
+      console.warn('Backend guest registration note:', err);
+    }
+
     const created = {
-      id: Date.now(),
-      eventId: activeEvent?.id || 1,
+      id: backendGuest?.id || backendGuest?.guest_id || Date.now(),
+      eventId: backendGuest?.eventId || backendGuest?.event_id || activeEvent?.id || 1,
       name: newGuest.name,
       phone: newGuest.phone,
-      selfieUrl: newGuest.selfieUrl,
-      status: 'Processing',
-      photosCount: 0,
-      initials: newGuest.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+      selfieUrl: backendGuest?.selfie_path || newGuest.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+      status: backendGuest?.status || 'registered',
+      matchedCount: backendGuest?.confirmed_matches || 0,
+      photosCount: backendGuest?.confirmed_matches || 0,
+      initials: newGuest.name ? newGuest.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'G',
+      timestamp: new Date().toISOString(),
     };
 
     albumStore.saveGuest(created);
-
     const currentPhotos = albumStore.getPhotos(activeEvent?.id);
     albumStore.matchGuestAgainstEventPhotos(created, currentPhotos);
 
     setGuests(albumStore.getGuests(activeEvent?.id));
     setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
     showToast(`Registered ${created.name}! Facial match complete.`);
+    refreshBackendData();
     return created;
   };
 

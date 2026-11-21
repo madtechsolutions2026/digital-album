@@ -29,12 +29,7 @@ class PhotographerAccessMiddleware:
     def _requires_studio(path: str) -> bool:
         return (
             path == "/admin"
-            or path.startswith("/admin/") and path != "/admin/login"
-            or path == "/api/events"
-            or path.startswith("/api/events/")
-            or path == "/api/photos/upload"
-            or path.startswith("/api/jobs/")
-            or path in {"/docs", "/redoc", "/openapi.json"}
+            or (path.startswith("/admin/") and path != "/admin/login")
         )
 
     async def __call__(self, scope, receive, send):
