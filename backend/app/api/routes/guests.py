@@ -67,10 +67,10 @@ async def register_guest(
         event_name = clean_code.replace("2026", "").capitalize() if "2026" in clean_code else clean_code
         if not event_name:
             event_name = "Wedding Celebration"
-        from datetime import date
+        from datetime import datetime, timezone
         event = Event(
             name=event_name,
-            event_date=date.today(),
+            event_date=datetime.now(timezone.utc),
             access_code=clean_code,
             password_hash="system_created",
         )
@@ -88,11 +88,15 @@ async def register_guest(
     # Save selfie to storage
     file_storage = FileStorageService()
     selfie_ext = os.path.splitext(selfie.filename or ".jpg")[1] or ".jpg"
-    selfie_path = file_storage.save_file(
-        file_content=selfie_bytes,
-        extension=selfie_ext,
-        subdirectory=f"selfies/event_{resolved_event_id}",
-    )
+    try:
+        selfie_path = file_storage.save_file(
+            file_content=selfie_bytes,
+            extension=selfie_ext,
+            subdirectory=f"selfies/event_{resolved_event_id}",
+        )
+    except Exception as e:
+        logger.warning(f"Could not save selfie to disk: {e}")
+        selfie_path = f"selfies/event_{resolved_event_id}/selfie{selfie_ext}"
 
     # Create Guest record
     guest = Guest(
@@ -105,55 +109,61 @@ async def register_guest(
     db.add(guest)
     await db.flush()  # to obtain guest_id
 
-    # Find existing photos in this event to run face matching
-    photos_res = await db.execute(
-        select(Photo).where(Photo.event_id == resolved_event_id).order_by(Photo.photo_id.desc())
-    )
-    photos = photos_res.scalars().all()
-
-    rekognition = get_aws_rekognition_service()
     has_pending = False
     confirmed_count = 0
 
-    # Compare selfie against existing event photos
-    for photo in photos:
-        try:
-            full_photo_path = file_storage.get_absolute_path(photo.file_path)
-            if not os.path.exists(full_photo_path):
-                continue
-            with open(full_photo_path, "rb") as f:
-                photo_bytes = f.read()
+    # Find existing photos in this event to run face matching
+    try:
+        photos_res = await db.execute(
+            select(Photo).where(Photo.event_id == resolved_event_id).order_by(Photo.photo_id.desc())
+        )
+        photos = photos_res.scalars().all()
 
-            matches = rekognition.compare_faces(
-                source_image_bytes=selfie_bytes,
-                target_image_bytes=photo_bytes,
-            )
+        if photos:
+            rekognition = get_aws_rekognition_service()
 
-            for m in matches:
-                guest_match = GuestMatch(
-                    event_id=resolved_event_id,
-                    guest_id=guest.guest_id,
-                    photo_id=photo.photo_id,
-                    similarity=m.similarity,
-                    confidence=m.confidence,
-                    status=m.tier,  # "confirmed" or "pending_review"
-                    bounding_box=m.bounding_box,
-                )
-                db.add(guest_match)
+            # Compare selfie against existing event photos
+            for photo in photos:
+                try:
+                    full_photo_path = file_storage.get_absolute_path(photo.file_path)
+                    if not os.path.exists(full_photo_path):
+                        continue
+                    with open(full_photo_path, "rb") as f:
+                        photo_bytes = f.read()
 
-                if m.is_review_required:
-                    has_pending = True
-                elif m.tier == "confirmed":
-                    confirmed_count += 1
-        except Exception as e:
-            logger.warning(f"Error matching photo {photo.photo_id}: {e}")
+                    matches = rekognition.compare_faces(
+                        source_image_bytes=selfie_bytes,
+                        target_image_bytes=photo_bytes,
+                    )
 
-    # Update guest status
-    if has_pending:
-        guest.status = "needs_review"
-    elif confirmed_count > 0:
-        guest.status = "matched"
-    else:
+                    for m in matches:
+                        guest_match = GuestMatch(
+                            event_id=resolved_event_id,
+                            guest_id=guest.guest_id,
+                            photo_id=photo.photo_id,
+                            similarity=m.similarity,
+                            confidence=m.confidence,
+                            status=m.tier,  # "confirmed" or "pending_review"
+                            bounding_box=m.bounding_box,
+                        )
+                        db.add(guest_match)
+
+                        if m.is_review_required:
+                            has_pending = True
+                        elif m.tier == "confirmed":
+                            confirmed_count += 1
+                except Exception as e:
+                    logger.warning(f"Error matching photo {photo.photo_id}: {e}")
+
+        # Update guest status
+        if has_pending:
+            guest.status = "needs_review"
+        elif confirmed_count > 0:
+            guest.status = "matched"
+        else:
+            guest.status = "registered"
+    except Exception as e:
+        logger.error(f"Face indexing note for guest {guest.guest_id}: {e}")
         guest.status = "registered"
 
     await db.commit()
@@ -181,11 +191,18 @@ async def register_guest(
 @router.get("/guests", status_code=status.HTTP_200_OK)
 async def list_guests(
     event_id: Optional[int] = Query(None, description="Filter by event ID"),
+    event_code: Optional[str] = Query(None, description="Filter by event access code"),
     db: AsyncSession = Depends(get_db),
 ):
     """List all registered guests, their match counts, and status."""
     query = select(Guest)
-    if event_id:
+    if event_code:
+        clean_code = event_code.strip().upper()
+        ev_res = await db.execute(select(Event).where(func.upper(Event.access_code) == clean_code))
+        ev = ev_res.scalar_one_or_none()
+        if ev:
+            query = query.where(Guest.event_id == ev.event_id)
+    elif event_id:
         query = query.where(Guest.event_id == event_id)
     query = query.order_by(Guest.guest_id.desc())
 
@@ -237,6 +254,7 @@ async def list_guests(
 @router.get("/matches/review", status_code=status.HTTP_200_OK)
 async def get_matches_for_review(
     event_id: Optional[int] = Query(None, description="Event ID to filter review queue"),
+    event_code: Optional[str] = Query(None, description="Event access code"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -249,7 +267,13 @@ async def get_matches_for_review(
         Photo, GuestMatch.photo_id == Photo.photo_id
     ).where(GuestMatch.status == "pending_review")
 
-    if event_id:
+    if event_code:
+        clean_code = event_code.strip().upper()
+        ev_res = await db.execute(select(Event).where(func.upper(Event.access_code) == clean_code))
+        ev = ev_res.scalar_one_or_none()
+        if ev:
+            query = query.where(GuestMatch.event_id == ev.event_id)
+    elif event_id:
         query = query.where(GuestMatch.event_id == event_id)
 
     query = query.order_by(GuestMatch.similarity.desc())

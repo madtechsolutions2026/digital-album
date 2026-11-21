@@ -77,21 +77,30 @@ class AlbumStore {
     return events;
   }
 
-  getGuests(eventId = null) {
+  getGuests(eventId = null, eventCode = null) {
     const all = this._getStorage('guests', []);
-    return eventId ? all.filter(g => g.eventId === eventId) : all;
+    if (!eventId && !eventCode) return all;
+    return all.filter(g => {
+      if (eventId && (String(g.eventId) === String(eventId) || String(g.event_id) === String(eventId))) {
+        return true;
+      }
+      if (eventCode && g.eventCode && String(g.eventCode).toUpperCase() === String(eventCode).toUpperCase()) {
+        return true;
+      }
+      return false;
+    });
   }
 
   saveGuest(guest) {
     const guests = this.getGuests();
-    const updated = [guest, ...guests.filter(g => g.id !== guest.id)];
+    const updated = [guest, ...guests.filter(g => String(g.id) !== String(guest.id))];
     this._setStorage('guests', updated);
     return updated;
   }
 
   getPhotos(eventId = null) {
     const all = this._getStorage('photos', []);
-    return eventId ? all.filter(p => p.eventId === eventId) : all;
+    return eventId ? all.filter(p => String(p.eventId) === String(eventId) || String(p.event_id) === String(eventId)) : all;
   }
 
   addPhotos(newPhotos) {
@@ -103,7 +112,7 @@ class AlbumStore {
 
   getMatches(eventId = null) {
     const all = this._getStorage('matches', []);
-    return eventId ? all.filter(m => m.eventId === eventId) : all;
+    return eventId ? all.filter(m => String(m.eventId) === String(eventId) || String(m.event_id) === String(eventId)) : all;
   }
 
   getReviewCandidates(eventId = null) {

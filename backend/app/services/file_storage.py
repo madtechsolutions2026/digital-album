@@ -46,9 +46,9 @@ class FileStorageService:
         
         # Use provided path or default from settings
         if storage_path:
-            self.base_path = Path(storage_path)
+            self.base_path = Path(storage_path).resolve()
         else:
-            self.base_path = Path(self.settings.STORAGE_PATH)
+            self.base_path = Path(self.settings.STORAGE_PATH).resolve()
         
         # Create base storage directory if it doesn't exist
         self._ensure_directory_exists(self.base_path)
@@ -212,6 +212,31 @@ class FileStorageService:
             raise ValidationError(f"Failed to save image: {str(e)}")
 
         return relative_path
+
+    def save_file(
+        self,
+        file_content: bytes,
+        extension: str = ".jpg",
+        subdirectory: str = "selfies",
+    ) -> str:
+        """
+        Save raw file bytes into a specific subdirectory.
+        Returns the relative path from base storage e.g. "selfies/uuid.jpg".
+        """
+        sub_dir = self.base_path / subdirectory
+        self._ensure_directory_exists(sub_dir)
+        filename = f"{uuid.uuid4()}{extension}"
+        file_path = sub_dir / filename
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        return f"{subdirectory}/{filename}"
+
+    def get_absolute_path(self, relative_path: str) -> str:
+        """Convert relative path to absolute string path."""
+        try:
+            return str(self.get_full_path(relative_path))
+        except Exception:
+            return str((self.base_path / relative_path).resolve())
 
     def get_full_path(self, relative_path: str) -> Path:
         """

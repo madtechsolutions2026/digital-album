@@ -1422,7 +1422,7 @@ export default function App() {
   // Sync state with active event changes
   useEffect(() => {
     if (activeEvent) {
-      setGuests(albumStore.getGuests(activeEvent.id));
+      setGuests(albumStore.getGuests(activeEvent.id, activeEvent.access_code));
       setReviewCandidates(albumStore.getReviewCandidates(activeEvent.id));
       setPhotos(albumStore.getPhotos(activeEvent.id));
     } else {
@@ -1435,30 +1435,30 @@ export default function App() {
   // Synchronize registered guests and match reviews from backend API in real-time
   const refreshBackendData = useCallback(async () => {
     try {
+      const filter = activeEvent ? { event_id: activeEvent.id, event_code: activeEvent.access_code } : {};
       const [guestsRes, reviewRes] = await Promise.all([
-        guestsAPI.getAll(),
-        guestsAPI.getMatchesForReview(),
+        guestsAPI.getAll(filter),
+        guestsAPI.getMatchesForReview(filter),
       ]);
 
       if (guestsRes.data?.success && Array.isArray(guestsRes.data?.data)) {
         const backendGuests = guestsRes.data.data;
-        if (backendGuests.length > 0) {
-          backendGuests.forEach(bg => {
-            albumStore.saveGuest({
-              id: bg.guest_id || bg.id,
-              eventId: bg.event_id || bg.eventId || activeEvent?.id || 1,
-              name: bg.name,
-              phone: bg.phone,
-              selfieUrl: bg.selfie_path || bg.selfieUrl,
-              status: bg.status,
-              photosCount: bg.photos_count ?? bg.matchedCount ?? 0,
-              matchedCount: bg.photos_count ?? bg.matchedCount ?? 0,
-              initials: bg.name ? bg.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'G',
-              timestamp: bg.created_at || bg.timestamp,
-            });
+        backendGuests.forEach(bg => {
+          albumStore.saveGuest({
+            id: bg.guest_id || bg.id,
+            eventId: bg.event_id || bg.eventId || activeEvent?.id,
+            eventCode: bg.event_code || bg.access_code || activeEvent?.access_code,
+            name: bg.name,
+            phone: bg.phone,
+            selfieUrl: bg.selfie_path || bg.selfieUrl,
+            status: bg.status,
+            photosCount: bg.photos_count ?? bg.matchedCount ?? 0,
+            matchedCount: bg.photos_count ?? bg.matchedCount ?? 0,
+            initials: bg.name ? bg.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'G',
+            timestamp: bg.created_at || bg.timestamp,
           });
-          setGuests(albumStore.getGuests(activeEvent?.id));
-        }
+        });
+        setGuests(albumStore.getGuests(activeEvent?.id, activeEvent?.access_code));
       }
 
       if (reviewRes.data?.success && Array.isArray(reviewRes.data?.data)) {
@@ -1477,7 +1477,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshBackendData]);
 
-  // Load events from backend on startup
+  // Load events from backend on startup and reconcile with local store
   useEffect(() => {
     eventsAPI.getAll().then(res => {
       const eventsList = res.data?.data?.events;
@@ -1487,7 +1487,7 @@ export default function App() {
             id: e.event_id,
             name: e.name,
             place: 'Hyderabad',
-            date: e.event_date || '2026-11-24',
+            date: e.event_date ? e.event_date.split('T')[0] : '2026-11-24',
             access_code: e.access_code,
             status: 'In progress',
             photosCount: e.photo_count || 0,
@@ -1496,9 +1496,16 @@ export default function App() {
         });
         const currentLocal = albumStore.getEvents();
         setEvents(currentLocal);
-        if (!activeEvent && currentLocal.length > 0) {
-          setActiveEvent(currentLocal[0]);
-        }
+
+        // Match active event by ID or access_code
+        setActiveEvent(prev => {
+          if (!prev) return currentLocal[0] || null;
+          const match = currentLocal.find(ev =>
+            ev.id === prev.id ||
+            (ev.access_code && prev.access_code && ev.access_code.toUpperCase() === prev.access_code.toUpperCase())
+          );
+          return match || currentLocal[0] || prev;
+        });
       }
     }).catch(e => console.debug('Events fetch error:', e));
   }, []);
@@ -1616,7 +1623,7 @@ export default function App() {
 
       const params = new URLSearchParams(window.location.search);
       const urlCode = params.get('event_code');
-      const eventCode = urlCode || activeEvent?.access_code || 'MADH2026';
+      const eventCode = urlCode || activeEvent?.access_code || '3GT6CD';
       formData.append('event_code', eventCode);
       if (activeEvent?.id) {
         formData.append('event_id', activeEvent.id);
@@ -1643,7 +1650,8 @@ export default function App() {
 
     const created = {
       id: backendGuest?.id || backendGuest?.guest_id || Date.now(),
-      eventId: backendGuest?.eventId || backendGuest?.event_id || activeEvent?.id || 1,
+      eventId: backendGuest?.eventId || backendGuest?.event_id || activeEvent?.id,
+      eventCode: activeEvent?.access_code || '3GT6CD',
       name: newGuest.name,
       phone: newGuest.phone,
       selfieUrl: backendGuest?.selfie_path || newGuest.selfieUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
@@ -1658,7 +1666,7 @@ export default function App() {
     const currentPhotos = albumStore.getPhotos(activeEvent?.id);
     albumStore.matchGuestAgainstEventPhotos(created, currentPhotos);
 
-    setGuests(albumStore.getGuests(activeEvent?.id));
+    setGuests(albumStore.getGuests(activeEvent?.id, activeEvent?.access_code));
     setReviewCandidates(albumStore.getReviewCandidates(activeEvent?.id));
     showToast(`Registered ${created.name}! Facial match complete.`);
     refreshBackendData();
